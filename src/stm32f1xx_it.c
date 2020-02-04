@@ -30,6 +30,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f1xx_it.h"
 
+
 /** @addtogroup IO_Toggle
   * @{
   */
@@ -38,6 +39,10 @@
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
+extern uint32_t ticks, startTick;
+uint32_t pressed = 0;
+//extern struct node *buttonPressesHead, *buttonPressesEnd;
+uint32_t button[300],buttonCount = 0, max = 300;
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
 
@@ -140,6 +145,22 @@ void PendSV_Handler(void)
   */
 void SysTick_Handler(void)
 {
+	ticks++;
+	if(pressed == 1 && GPIO_ReadInputDataBit(GPIOA, GPIO_PIN_0) == Bit_RESET){//read pin
+		GPIOC->BSRR = (uint32_t)GPIO_PIN_9;
+		uint32_t dif = ticks - startTick;
+		pressed = 0;
+		startTick = ticks;
+		if(buttonPressesHead == 0)
+		{
+			buttonPressesHead = initializeNode(dif);
+			buttonPressesEnd = buttonPressesHead;
+		}else
+		{
+			addNode(dif, buttonPressesEnd);
+			buttonPressesEnd = buttonPressesEnd->next;
+		}
+	}
 }
 
 /******************************************************************************/
@@ -154,9 +175,33 @@ void SysTick_Handler(void)
   * @param  None
   * @retval None
   */
-/*void PPP_IRQHandler(void)
+void EXTI0_IRQHandler(void)
 {
-}*/
+    if (EXTI_GetITStatus(EXTI_Line0) != RESET) {
+		uint32_t dif = ticks - startTick;
+    	if(dif > 100){
+    		startTick = ticks;
+    		pressed = 1;
+
+    		GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
+
+    		if(dif > 1500)
+    		{
+    			char str = ' ';
+    			Translate(buttonPressesHead, &str);
+    			/*do nothing b/c i want the first node to be how long button is held*/
+    			//buttonPressesHead = initializeNode(dif);
+    			//buttonPressesEnd = buttonPressesHead;
+    		}else
+    		{
+    			addNode(dif, buttonPressesEnd);
+    			buttonPressesEnd = buttonPressesEnd->next;
+    		}
+    	}
+    	/* Clear interrupt flag */
+        EXTI_ClearITPendingBit(EXTI_Line0);
+    }
+}
 
 /**
   * @}

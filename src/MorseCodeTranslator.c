@@ -6,14 +6,16 @@
  */
 
 #include "MorseCodeTranslator.h"
-#include "string.h"
+//#include <string.h>
 
+const uint32_t BEEP_TICK_LENGTH = 500;
+const uint32_t SPACE_TICK_LENGTH = 500;
 
 void Translate(struct node *morseCode, char *word)
 {
-	struct node *Head = morseCode;
+	//struct node *Head = morseCode;
 	uint32_t count = 0;
-	int charSize = 0;
+	//int charSize = 0;
 	while(morseCode != 0)
 	{
 		char tmp;
