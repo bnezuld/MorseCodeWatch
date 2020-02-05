@@ -146,19 +146,23 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
 	ticks++;
+	if(ticks % 400 == 0)
+	{
+		//GPIO_PORT[Led]->ODR ^= GPIO_PIN[Led];
+		GPIOC->ODR ^= (uint32_t)GPIO_PIN_8;
+		//GPIOC->BSRR = ((uint32_t)GPIO_PIN_8 << 16U);
+	}
 	if(pressed == 1 && GPIO_ReadInputDataBit(GPIOA, GPIO_PIN_0) == Bit_RESET){//read pin
-		GPIOC->BSRR = (uint32_t)GPIO_PIN_9;
+		GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
+
 		uint32_t dif = ticks - startTick;
 		pressed = 0;
 		startTick = ticks;
-		if(buttonPressesHead == 0)
+
+		button[buttonCount++] = dif;
+		if(buttonCount >= max)
 		{
-			buttonPressesHead = initializeNode(dif);
-			buttonPressesEnd = buttonPressesHead;
-		}else
-		{
-			addNode(dif, buttonPressesEnd);
-			buttonPressesEnd = buttonPressesEnd->next;
+			buttonCount = 0;
 		}
 	}
 }
@@ -179,23 +183,23 @@ void EXTI0_IRQHandler(void)
 {
     if (EXTI_GetITStatus(EXTI_Line0) != RESET) {
 		uint32_t dif = ticks - startTick;
-    	if(dif > 100){
+    	if(dif > 200){
     		startTick = ticks;
     		pressed = 1;
 
-    		GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
+    		GPIOC->BSRR |= (uint32_t)GPIO_PIN_9;
 
-    		if(dif > 1500)
+    		if(buttonCount != 0){
+    			button[buttonCount++] = dif;
+				if(buttonCount >= max)
+				{
+					buttonCount = 0;
+				}
+    		}
+
+    		if(dif > 500 * 10)
     		{
-    			char str = ' ';
-    			Translate(buttonPressesHead, &str);
-    			/*do nothing b/c i want the first node to be how long button is held*/
-    			//buttonPressesHead = initializeNode(dif);
-    			//buttonPressesEnd = buttonPressesHead;
-    		}else
-    		{
-    			addNode(dif, buttonPressesEnd);
-    			buttonPressesEnd = buttonPressesEnd->next;
+    			Translate(button,&buttonCount);
     		}
     	}
     	/* Clear interrupt flag */

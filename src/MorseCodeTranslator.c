@@ -8,26 +8,56 @@
 #include "MorseCodeTranslator.h"
 //#include <string.h>
 
-const uint32_t BEEP_TICK_LENGTH = 500;
-const uint32_t SPACE_TICK_LENGTH = 500;
+const uint32_t BEEP_TICK_LENGTH = 400;
+const uint32_t SPACE_TICK_LENGTH = 400;
 
-void Translate(struct node *morseCode, char *word)
+const char MorseCodeTable0[] = {'E','T'};
+const char MorseCodeTable1[] = {'I','A','N','M'};
+const char MorseCodeTable2[] = {'S','U','R','W','D','K','G','O'};
+const char MorseCodeTable3[] = {'H','V','F','-','L','-','P','J','B','X','C','Y','Z','Q'};
+
+void Translate(uint32_t *morseCode, uint32_t *count)
 {
-	//struct node *Head = morseCode;
-	uint32_t count = 0;
-	//int charSize = 0;
-	while(morseCode != 0)
+	uint32_t tmpCount = 0;
+	char c[300];
+	uint8_t stringCount = 0;
+	uint8_t position = 1;
+	uint8_t morseCodeValue = 0;
+	while(tmpCount != *count)
 	{
-		char tmp;
-		if(count % 2 == 0){//a beep
-			tmp = (char)((morseCode->data/BEEP_TICK_LENGTH) + 48);
+		if(tmpCount % 2 == 0){//a beep
+			if(morseCode[tmpCount]/BEEP_TICK_LENGTH > 3){//dash
+				morseCodeValue += position;
+			}
+			position = position << 1;
 		}else{//a space
-			tmp = morseCode->data/SPACE_TICK_LENGTH > 3? '-':' ';
-		}
-		strncat(word, tmp, 1);
+			uint32_t i = morseCode[tmpCount]/SPACE_TICK_LENGTH;
+			if(i > 3){//next letter
+				c[stringCount++] = TranslateChar(morseCodeValue, position >> 1);
+				morseCodeValue = 0;
+				position = 1;
+			}else if (i > 7){//next word
 
-		count++;
-		morseCode = morseCode->next;
+			}
+		}
+		tmpCount++;
 	}
+	*count = 0;
+}
+
+char TranslateChar(int val, int pos)
+{
+	switch(pos)
+	{
+	case 1:
+		return MorseCodeTable0[val];
+	case 2:
+		return MorseCodeTable1[val];
+	case 4:
+		return MorseCodeTable2[val];
+	case 8:
+		return MorseCodeTable3[val];
+	}
+	return '-';
 }
 

@@ -73,6 +73,7 @@ int main(void)
   /* Enable timer for ports */
   RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;//port C
   initGPIO(GPIOC, GPIO_PIN_9, 9, GPIO_Speed_50MHz);
+  initGPIO(GPIOC, GPIO_PIN_8, 8, GPIO_Speed_50MHz);
 
   /* Enable the BUTTON Clock */
   RCC->APB2ENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO;//port A
