@@ -36,19 +36,94 @@ SOFTWARE.
 #include "task.h"
 #include "queue.h"
 #include "timers.h"
+#include "semphr.h"
 
 /* Private typedef */
 /* Private define  */
 #define mainQUEUE_LENGTH 1
+#define mainQUEUE_RECEIVE_TASK_PRIORITY		( tskIDLE_PRIORITY + 2 )
+#define	mainQUEUE_SEND_TASK_PRIORITY		( tskIDLE_PRIORITY + 1 )
+
+#define mainQUEUE_SEND_FREQUENCY_MS			( 100 / portTICK_PERIOD_MS )
+
 
 /* Private macro */
 /* Private variables */
 uint32_t startTick = 0;
 uint32_t ticks = 0;
 static QueueHandle_t xQueue = NULL;
+SemaphoreHandle_t  xSemaphore = NULL;
+uint8_t pressed = 0;
 /* Private function prototypes */
-/* Private functions */
+static void PollingTask( void *pvParameters );
+//void RecordButtonPresses();
 
+/* Private functions */
+static void PollingTask( void *pvParameters )
+{
+	for(;;)
+	{
+		//wait for semaphore from interrupt
+		if( xSemaphore != NULL )
+		{
+			/* See if we can obtain the semaphore.  If the semaphore is not
+			available wait 10 ticks(can maybe increase this to max so it waits forever) to see if it becomes free. */
+			if( xSemaphoreTake( xSemaphore, ( TickType_t ) 10 ) == pdTRUE ){
+
+				/*button pressed*/
+
+				TickType_t xStart, xEnd;
+				xTaskGetTickCount();
+
+				pressed = 1;
+
+				//TODO- add to queue(button press)
+				GPIOC->BSRR |= (uint32_t)GPIO_PIN_9;
+
+				/* Buton release polling */
+				while(GPIO_ReadInputDataBit(GPIOA, GPIO_PIN_0) != Bit_RESET){
+					//wait for the button to be unpressed(or maybe can connect same button to a interrupt that can release and it will wait for that semaphore?)
+
+					//no operation(used to keep empty while loop working)
+					asm("nop");
+				}
+
+				//TODO- add to queue(button released)
+				GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
+
+				TickType_t xNextWakeTime;
+
+				/* Initialise xNextWakeTime - this only needs to be done once. */
+				xNextWakeTime = xTaskGetTickCount();
+
+				//block so ISR semaphore in ISR cannot be triggerd for a period of time
+				vTaskDelayUntil( &xNextWakeTime, mainQUEUE_SEND_FREQUENCY_MS );
+
+				//release semaphore (giving the semaphore back so other tasks can take it)
+	            //xSemaphoreGive( xSemaphore );
+	            pressed = 0;
+			}
+		}
+	}
+}
+
+void EXTI0_IRQHandler(void)
+{
+	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+
+    if (EXTI_GetITStatus(EXTI_Line0) != RESET) {
+    	if(pressed == 0){
+			uint32_t dif = ticks - startTick;
+			//if(dif > 200){
+	        xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken );
+			//}
+    	}
+    	/* Clear interrupt flag */
+        EXTI_ClearITPendingBit(EXTI_Line0);
+    }
+
+	portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
+}
 /**
 **===========================================================================
 **
@@ -73,6 +148,8 @@ int main(void)
 
   /* TODO - Add your application code here */
   /* GPIO Ports Clock Enable */
+	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
+
 
   /* Enable timer for ports */
   RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;//port C
@@ -89,9 +166,15 @@ int main(void)
 
   /* Create the queue. */
   xQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( unsigned long ) );
+  xSemaphore = xSemaphoreCreateBinary();
 
-  //SysTick_Config(24000000  / 1000);
-  /* Infinite loop */
+  /* create the task(s) */
+  xTaskCreate( PollingTask, "Rx", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY, NULL );
+
+  /*start tasks*/
+  vTaskStartScheduler();
+
+  /* Infinite loop (should never hit) */
   while (1)
   {
   }

@@ -39,10 +39,8 @@
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
-extern uint32_t ticks, startTick;
-uint32_t pressed = 0;
+extern uint32_t ticks, startTick, pressed;
 //extern struct node *buttonPressesHead, *buttonPressesEnd;
-uint32_t button[10],buttonCount = 0, max = 10;
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
 
@@ -145,26 +143,7 @@ void DebugMon_Handler(void)
   */
 //void SysTick_Handler(void)
 //{
-//	ticks++;
-//	if(ticks % 400 == 0)
-//	{
-//		//GPIO_PORT[Led]->ODR ^= GPIO_PIN[Led];
-//		GPIOC->ODR ^= (uint32_t)GPIO_PIN_8;
-//		//GPIOC->BSRR = ((uint32_t)GPIO_PIN_8 << 16U);
-//	}
-//	if(pressed == 1 && GPIO_ReadInputDataBit(GPIOA, GPIO_PIN_0) == Bit_RESET){//read pin
-//		GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
 //
-//		uint32_t dif = ticks - startTick;
-//		pressed = 0;
-//		startTick = ticks;
-//
-//		button[buttonCount++] = dif;
-//		if(buttonCount >= max)
-//		{
-//			buttonCount = 0;
-//		}
-//	}
 //}
 
 /******************************************************************************/
@@ -179,33 +158,7 @@ void DebugMon_Handler(void)
   * @param  None
   * @retval None
   */
-void EXTI0_IRQHandler(void)
-{
-    if (EXTI_GetITStatus(EXTI_Line0) != RESET) {
-		uint32_t dif = ticks - startTick;
-    	if(dif > 200){
-    		startTick = ticks;
-    		pressed = 1;
 
-    		GPIOC->BSRR |= (uint32_t)GPIO_PIN_9;
-
-    		if(buttonCount != 0){
-    			button[buttonCount++] = dif;
-				if(buttonCount >= max)
-				{
-					buttonCount = 0;
-				}
-    		}
-
-    		if(dif > 500 * 10)
-    		{
-    			Translate(button,&buttonCount);
-    		}
-    	}
-    	/* Clear interrupt flag */
-        EXTI_ClearITPendingBit(EXTI_Line0);
-    }
-}
 
 /**
   * @}

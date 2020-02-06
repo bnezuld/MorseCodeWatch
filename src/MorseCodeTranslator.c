@@ -16,6 +16,9 @@ const char MorseCodeTable1[] = {'I','A','N','M'};
 const char MorseCodeTable2[] = {'S','U','R','W','D','K','G','O'};
 const char MorseCodeTable3[] = {'H','V','F','-','L','-','P','J','B','X','C','Y','Z','Q'};
 
+#define MAX_MORSECODE 50
+uint32_t button[MAX_MORSECODE], buttonCount = 0;
+
 void Translate(uint32_t *morseCode, uint32_t *count)
 {
 	uint32_t tmpCount = 0;
@@ -45,7 +48,7 @@ void Translate(uint32_t *morseCode, uint32_t *count)
 	*count = 0;
 }
 
-char TranslateChar(int val, int pos)
+char TranslateChar(uint8_t val, uint8_t pos)
 {
 	switch(pos)
 	{
@@ -59,5 +62,29 @@ char TranslateChar(int val, int pos)
 		return MorseCodeTable3[val];
 	}
 	return '-';
+}
+
+void ButtonPress(uint8_t buttonStatus, uint8_t timeDiffrence)
+{
+	if(buttonStatus = 0){// button released
+		if(buttonCount != 0){
+			button[buttonCount++] = timeDiffrence;
+			if(buttonCount >= MAX_MORSECODE)
+			{
+				buttonCount = 0;
+			}
+		}
+
+		if(timeDiffrence > 500 * 10)
+		{
+			Translate(button,&buttonCount);
+		}
+	}else{// button pressed
+		button[buttonCount++] = timeDiffrence;
+		if(buttonCount >= MAX_MORSECODE)
+		{
+			buttonCount = 0;
+		}
+	}
 }
 
