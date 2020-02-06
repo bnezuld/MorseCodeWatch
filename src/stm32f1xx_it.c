@@ -42,7 +42,7 @@
 extern uint32_t ticks, startTick;
 uint32_t pressed = 0;
 //extern struct node *buttonPressesHead, *buttonPressesEnd;
-uint32_t button[300],buttonCount = 0, max = 300;
+uint32_t button[10],buttonCount = 0, max = 10;
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
 
@@ -116,9 +116,9 @@ void UsageFault_Handler(void)
   * @param  None
   * @retval None
   */
-void SVC_Handler(void)
-{
-}
+//void SVC_Handler(void)
+//{
+//}
 
 /**
   * @brief  This function handles Debug Monitor exception.
@@ -134,38 +134,38 @@ void DebugMon_Handler(void)
   * @param  None
   * @retval None
   */
-void PendSV_Handler(void)
-{
-}
+//void PendSV_Handler(void)
+//{
+//}
 
 /**
   * @brief  This function handles SysTick Handler.
   * @param  None
   * @retval None
   */
-void SysTick_Handler(void)
-{
-	ticks++;
-	if(ticks % 400 == 0)
-	{
-		//GPIO_PORT[Led]->ODR ^= GPIO_PIN[Led];
-		GPIOC->ODR ^= (uint32_t)GPIO_PIN_8;
-		//GPIOC->BSRR = ((uint32_t)GPIO_PIN_8 << 16U);
-	}
-	if(pressed == 1 && GPIO_ReadInputDataBit(GPIOA, GPIO_PIN_0) == Bit_RESET){//read pin
-		GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
-
-		uint32_t dif = ticks - startTick;
-		pressed = 0;
-		startTick = ticks;
-
-		button[buttonCount++] = dif;
-		if(buttonCount >= max)
-		{
-			buttonCount = 0;
-		}
-	}
-}
+//void SysTick_Handler(void)
+//{
+//	ticks++;
+//	if(ticks % 400 == 0)
+//	{
+//		//GPIO_PORT[Led]->ODR ^= GPIO_PIN[Led];
+//		GPIOC->ODR ^= (uint32_t)GPIO_PIN_8;
+//		//GPIOC->BSRR = ((uint32_t)GPIO_PIN_8 << 16U);
+//	}
+//	if(pressed == 1 && GPIO_ReadInputDataBit(GPIOA, GPIO_PIN_0) == Bit_RESET){//read pin
+//		GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
+//
+//		uint32_t dif = ticks - startTick;
+//		pressed = 0;
+//		startTick = ticks;
+//
+//		button[buttonCount++] = dif;
+//		if(buttonCount >= max)
+//		{
+//			buttonCount = 0;
+//		}
+//	}
+//}
 
 /******************************************************************************/
 /*                 STM32F1xx Peripherals Interrupt Handlers                   */

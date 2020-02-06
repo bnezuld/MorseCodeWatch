@@ -31,17 +31,21 @@ SOFTWARE.
 #include <stddef.h>
 #include "BoardSupport.h"
 #include "LinkedList.h"
+/* Kernel includes. */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "timers.h"
 
 /* Private typedef */
 /* Private define  */
-
+#define mainQUEUE_LENGTH 1
 
 /* Private macro */
 /* Private variables */
 uint32_t startTick = 0;
-uint32_t ticks =  0;
-struct node* buttonPressesHead = 0, * buttonPressesEnd = 0;
-
+uint32_t ticks = 0;
+static QueueHandle_t xQueue = NULL;
 /* Private function prototypes */
 /* Private functions */
 
@@ -82,7 +86,11 @@ int main(void)
   initGPIO(GPIOA, GPIO_Pin_0, 0, GPIO_Mode_IN_FLOATING);
   initEXTI(GPIO_PortSourceGPIOA, GPIO_PinSource0, EXTI_Line0, EXTI_Mode_Interrupt, EXTI_Trigger_Rising, EXTI0_IRQn);
 
-  SysTick_Config(24000000  / 1000);
+
+  /* Create the queue. */
+  xQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( unsigned long ) );
+
+  //SysTick_Config(24000000  / 1000);
   /* Infinite loop */
   while (1)
   {

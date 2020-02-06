@@ -19,7 +19,7 @@ const char MorseCodeTable3[] = {'H','V','F','-','L','-','P','J','B','X','C','Y',
 void Translate(uint32_t *morseCode, uint32_t *count)
 {
 	uint32_t tmpCount = 0;
-	char c[300];
+	char c[10];
 	uint8_t stringCount = 0;
 	uint8_t position = 1;
 	uint8_t morseCodeValue = 0;
