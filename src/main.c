@@ -60,12 +60,23 @@ struct ButtonPress{
 };
 /* Private function prototypes */
 static void PollingTask( void *pvParameters );
-//void RecordButtonPresses();
+static void RecordButtonPresses( void *pvParameters );
+
 
 /* Private functions */
+static void RecordButtonPresses( void *pvParameters )
+{
+	struct ButtonPress button;
+	for(;;)
+	{
+		xQueueReceive( xQueue, &button, portMAX_DELAY );
+		ButtonPress(button.time,button.buttonState);
+	}
+}
+
 static void PollingTask( void *pvParameters )
 {
-	TickType_t startTicks;
+	TickType_t startTicks = 0;
 	struct ButtonPress button;
 	for(;;)
 	{
@@ -79,7 +90,7 @@ static void PollingTask( void *pvParameters )
 				TickType_t endTicks, difference;
 
 				//diffrence from button release
-				difference = startTicks - xTaskGetTickCount();
+				difference = xTaskGetTickCount() - startTicks;
 
 				//add to queue
 				button.buttonState = 0;//time from when it was released
@@ -104,22 +115,22 @@ static void PollingTask( void *pvParameters )
 				GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
 
 				endTicks = xTaskGetTickCount();
-				difference = startTicks - endTicks;//button held time
+				difference = endTicks - startTicks;//button held time
 				//add to queue(button released, was held)
 				button.buttonState = 1;//time it was held for
 				button.time = difference;
-				xQueueSend( xQueue, &button, 0 );
+				xQueueSend( xQueue, &button, 1);
 
-
-				/* Initialise xNextWakeTime - this only needs to be done once. */
-				xNextWakeTime = endTicks;
 
 				//block so ISR semaphore in ISR cannot be triggerd for a period of time
-				vTaskDelayUntil( &xNextWakeTime, mainQUEUE_SEND_FREQUENCY_MS );
+				vTaskDelayUntil( &endTicks, mainQUEUE_SEND_FREQUENCY_MS );
+
 
 				//release semaphore (giving the semaphore back so other tasks can take it)
 	            //xSemaphoreGive( xSemaphore );
 	            pressed = 0;
+				startTicks = xTaskGetTickCount();
+
 			}
 		}
 	}
@@ -183,11 +194,12 @@ int main(void)
 
 
   /* Create the queue. */
-  xQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( struct buttonPress ) );
+  xQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( struct ButtonPress ) );
   xSemaphore = xSemaphoreCreateBinary();
 
   /* create the task(s) */
-  xTaskCreate( PollingTask, "Rx", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY, NULL );
+  xTaskCreate( PollingTask, "ButtonPolling", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_SEND_TASK_PRIORITY, NULL );
+  xTaskCreate( RecordButtonPresses, "RecordBP", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY, NULL );
 
   /*start tasks*/
   vTaskStartScheduler();
