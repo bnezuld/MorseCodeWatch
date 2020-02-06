@@ -40,7 +40,7 @@ SOFTWARE.
 
 /* Private typedef */
 /* Private define  */
-#define mainQUEUE_LENGTH 1
+#define mainQUEUE_LENGTH 10
 #define mainQUEUE_RECEIVE_TASK_PRIORITY		( tskIDLE_PRIORITY + 2 )
 #define	mainQUEUE_SEND_TASK_PRIORITY		( tskIDLE_PRIORITY + 1 )
 
@@ -54,6 +54,10 @@ uint32_t ticks = 0;
 static QueueHandle_t xQueue = NULL;
 SemaphoreHandle_t  xSemaphore = NULL;
 uint8_t pressed = 0;
+struct ButtonPress{
+	uint32_t time;
+	uint8_t buttonState;
+};
 /* Private function prototypes */
 static void PollingTask( void *pvParameters );
 //void RecordButtonPresses();
@@ -61,6 +65,8 @@ static void PollingTask( void *pvParameters );
 /* Private functions */
 static void PollingTask( void *pvParameters )
 {
+	TickType_t startTicks;
+	struct ButtonPress button;
 	for(;;)
 	{
 		//wait for semaphore from interrupt
@@ -70,15 +76,22 @@ static void PollingTask( void *pvParameters )
 			available wait 10 ticks(can maybe increase this to max so it waits forever) to see if it becomes free. */
 			if( xSemaphoreTake( xSemaphore, ( TickType_t ) 10 ) == pdTRUE ){
 
-				/*button pressed*/
+				TickType_t endTicks, difference;
 
-				TickType_t xStart, xEnd;
-				xTaskGetTickCount();
+				//diffrence from button release
+				difference = startTicks - xTaskGetTickCount();
 
+				//add to queue
+				button.buttonState = 0;//time from when it was released
+				button.time = difference;
+				xQueueSend( xQueue, &button, 0 );
+
+				/*button marked as pressed*/
 				pressed = 1;
 
-				//TODO- add to queue(button press)
 				GPIOC->BSRR |= (uint32_t)GPIO_PIN_9;
+
+				startTicks = xTaskGetTickCount();
 
 				/* Buton release polling */
 				while(GPIO_ReadInputDataBit(GPIOA, GPIO_PIN_0) != Bit_RESET){
@@ -88,13 +101,18 @@ static void PollingTask( void *pvParameters )
 					asm("nop");
 				}
 
-				//TODO- add to queue(button released)
 				GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
 
-				TickType_t xNextWakeTime;
+				endTicks = xTaskGetTickCount();
+				difference = startTicks - endTicks;//button held time
+				//add to queue(button released, was held)
+				button.buttonState = 1;//time it was held for
+				button.time = difference;
+				xQueueSend( xQueue, &button, 0 );
+
 
 				/* Initialise xNextWakeTime - this only needs to be done once. */
-				xNextWakeTime = xTaskGetTickCount();
+				xNextWakeTime = endTicks;
 
 				//block so ISR semaphore in ISR cannot be triggerd for a period of time
 				vTaskDelayUntil( &xNextWakeTime, mainQUEUE_SEND_FREQUENCY_MS );
@@ -165,7 +183,7 @@ int main(void)
 
 
   /* Create the queue. */
-  xQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( unsigned long ) );
+  xQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( struct buttonPress ) );
   xSemaphore = xSemaphoreCreateBinary();
 
   /* create the task(s) */
