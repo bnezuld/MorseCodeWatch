@@ -10,7 +10,9 @@
 
 #include "LinkedList.h"
 
-void Translate(uint32_t *morseCode, uint32_t *count);
+char* Translate(uint32_t *morseCode, uint32_t *count);
+char* TranslateSelf();
+
 char TranslateChar(uint8_t val, uint8_t pos);
 
 void ButtonPress(uint32_t timeDiffrence, uint8_t ButtonStatus);

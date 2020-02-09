@@ -49,28 +49,62 @@ SOFTWARE.
 
 /* Private macro */
 /* Private variables */
+extern uint32_t BEEP_TICK_LENGTH;
+extern uint32_t SPACE_TICK_LENGTH;
+
 uint32_t startTick = 0;
 uint32_t ticks = 0;
-static QueueHandle_t xQueue = NULL;
-SemaphoreHandle_t  xSemaphore = NULL;
+static QueueHandle_t xQueue = NULL, MessageQueue = NULL;
+SemaphoreHandle_t  xSemaphorePolling = NULL, xSemaphoreISR = NULL;
+static TimerHandle_t xLEDTimer = NULL;
+
+TaskHandle_t  RecordButtonPressesTask = NULL;
+
+
 uint8_t pressed = 0;
 struct ButtonPress{
 	uint32_t time;
 	uint8_t buttonState;
 };
 /* Private function prototypes */
+//task function(s)
 static void PollingTask( void *pvParameters );
 static void RecordButtonPresses( void *pvParameters );
+//timer callback function(s)
+static void TranslateMorseCode( TimerHandle_t xTimer );
+
 
 
 /* Private functions */
+static void TranslateMorseCode( TimerHandle_t xTimer )
+{
+	//stop recorButtonPresses task(can i use semaphore, i think beter to do this since is activated by a timer, block time must be zero if using semaphore)
+	vTaskSuspend(RecordButtonPressesTask);
+	xSemaphoreTake(xSemaphoreISR, 0);//try to clear the semaphore for the ISR
+	xSemaphoreTake(xSemaphorePolling, 0);//try to clear the semaphore for the ISR
+	char* c = TranslateSelf();
+
+
+	//MessageQueue
+	//figure out what to do with the message
+
+	//start recorButtonPresses task
+	vTaskResume(RecordButtonPressesTask);
+	xSemaphoreGive(xSemaphoreISR);//try to clear the semaphore for the ISR
+}
+
 static void RecordButtonPresses( void *pvParameters )
 {
 	struct ButtonPress button;
 	for(;;)
 	{
+		//wait for something to be in the queue for portMAX_DELAY
 		xQueueReceive( xQueue, &button, portMAX_DELAY );
 		ButtonPress(button.time,button.buttonState);
+		//queue message(in an other queue)
+		//add semaphore to notify other task
+		//other task will stop the polling task and start it once finished
+		//the task will display back the message(in the case im thinking it will just morse code back the message to confirm, might want to do this a character a time)
 	}
 }
 
@@ -81,11 +115,12 @@ static void PollingTask( void *pvParameters )
 	for(;;)
 	{
 		//wait for semaphore from interrupt
-		if( xSemaphore != NULL )
+		if( xSemaphorePolling != NULL )
 		{
 			/* See if we can obtain the semaphore.  If the semaphore is not
 			available wait 10 ticks(can maybe increase this to max so it waits forever) to see if it becomes free. */
-			if( xSemaphoreTake( xSemaphore, ( TickType_t ) 10 ) == pdTRUE ){
+			if( xSemaphoreTake( xSemaphorePolling, ( TickType_t ) 10 ) == pdTRUE ){
+				xTimerStop(xLEDTimer, 0);
 
 				TickType_t endTicks, difference;
 
@@ -96,9 +131,6 @@ static void PollingTask( void *pvParameters )
 				button.buttonState = 0;//time from when it was released
 				button.time = difference;
 				xQueueSend( xQueue, &button, 0 );
-
-				/*button marked as pressed*/
-				pressed = 1;
 
 				GPIOC->BSRR |= (uint32_t)GPIO_PIN_9;
 
@@ -121,16 +153,18 @@ static void PollingTask( void *pvParameters )
 				button.time = difference;
 				xQueueSend( xQueue, &button, 1);
 
+				//start Timer, to call the translate task
+				xTimerReset(xLEDTimer, 0);
+				xTimerStart(xLEDTimer, 0);
 
 				//block so ISR semaphore in ISR cannot be triggerd for a period of time
 				vTaskDelayUntil( &endTicks, mainQUEUE_SEND_FREQUENCY_MS );
 
 
-				//release semaphore (giving the semaphore back so other tasks can take it)
-	            //xSemaphoreGive( xSemaphore );
+				//release semaphoreISR (giving the semaphore so ISR can happen and give this task the semaphore it needs)
+	            xSemaphoreGive( xSemaphoreISR );
 	            pressed = 0;
 				startTicks = xTaskGetTickCount();
-
 			}
 		}
 	}
@@ -141,11 +175,8 @@ void EXTI0_IRQHandler(void)
 	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
 
     if (EXTI_GetITStatus(EXTI_Line0) != RESET) {
-    	if(pressed == 0){
-			uint32_t dif = ticks - startTick;
-			//if(dif > 200){
-	        xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken );
-			//}
+    	if(xSemaphoreTakeFromISR( xSemaphoreISR, &xHigherPriorityTaskWoken ) == pdTRUE){
+	        xSemaphoreGiveFromISR( xSemaphorePolling, &xHigherPriorityTaskWoken );
     	}
     	/* Clear interrupt flag */
         EXTI_ClearITPendingBit(EXTI_Line0);
@@ -177,7 +208,8 @@ int main(void)
 
   /* TODO - Add your application code here */
   /* GPIO Ports Clock Enable */
-	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
+  //give priority for preemption
+  NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
 
 
   /* Enable timer for ports */
@@ -192,14 +224,25 @@ int main(void)
   initGPIO(GPIOA, GPIO_Pin_0, 0, GPIO_Mode_IN_FLOATING);
   initEXTI(GPIO_PortSourceGPIOA, GPIO_PinSource0, EXTI_Line0, EXTI_Mode_Interrupt, EXTI_Trigger_Rising, EXTI0_IRQn);
 
+  /* Create the timer(s) */
+  xLEDTimer = xTimerCreate( 	"LEDTimer", 				/* A text name, purely to help debugging. */
+							((SPACE_TICK_LENGTH * 10) / portTICK_PERIOD_MS ),/* The timer period, in this case (SPACE_TICK_LENGTH * 10) ms. */
+							pdFALSE,					/* This is a one-shot timer, so xAutoReload is set to pdFALSE. */
+							( void * ) 0,				/* The ID is not used, so can be set to anything. */
+							TranslateMorseCode			/* The callback function that switches the LED off. */
+						);
 
   /* Create the queue. */
   xQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( struct ButtonPress ) );
-  xSemaphore = xSemaphoreCreateBinary();
+  MessageQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( char* ) );
+
+  xSemaphorePolling = xSemaphoreCreateBinary();
+  xSemaphoreISR = xSemaphoreCreateBinary();
+  xSemaphoreGive(xSemaphoreISR);
 
   /* create the task(s) */
   xTaskCreate( PollingTask, "ButtonPolling", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_SEND_TASK_PRIORITY, NULL );
-  xTaskCreate( RecordButtonPresses, "RecordBP", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY, NULL );
+  xTaskCreate( RecordButtonPresses, "RecordBP", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY, &RecordButtonPressesTask );
 
   /*start tasks*/
   vTaskStartScheduler();
