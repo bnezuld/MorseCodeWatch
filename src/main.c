@@ -248,7 +248,9 @@ static void Menu( void *pvParameters )
 		}else if(strcmp(message, "N") == 0)
 		{
 			free(message);
-			char* test = "N";
+			char* test = malloc(2 * sizeof(char));
+			test[0] = 'N';
+			test[1] = '\0';
 			xQueueSend( sendMessageQueue, &test, 0 );
 			xQueueReceive( messageQueue, &message, portMAX_DELAY );
 			xQueueSend( sendMessageQueue, &message, 0 );
@@ -376,9 +378,6 @@ int main(void)
 {
   	int i = 0;
 
-  	//give priority for preemption
-	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
-
 	/**
 	*  IMPORTANT NOTE!
 	*  The symbol VECT_TAB_SRAM needs to be defined when building the project
@@ -389,44 +388,8 @@ int main(void)
 	*  E.g.  SCB->VTOR = 0x20000000;
 	*/
 
-
-	/* TODO - Add your application code here */
-	/* GPIO Ports Clock Enable */
-
-
-	/*USART*/
-	//USART_ClockInitTypeDef* usartClockInit;
-	//USART_ClockStructInit(usartClockInit);
-	//USART_ClockInit(USART1, usartClockInit);
-
-
-	//USART_InitTypeDef* usartInit;
-	//USART_StructInit(usartInit);
-	//USART_Init(USART1, usartInit);
-
-	/**
-	  * @brief  Enables or disables the specified USART interrupts.
-	  * @param  USARTx: Select the USART or the UART peripheral.
-	  *   This parameter can be one of the following values:
-	  *   USART1, USART2, USART3, UART4 or UART5.
-	  * @param  USART_IT: specifies the USART interrupt sources to be enabled or disabled.
-	  *   This parameter can be one of the following values:
-	  *     @arg USART_IT_CTS:  CTS change interrupt (not available for UART4 and UART5)
-	  *     @arg USART_IT_LBD:  LIN Break detection interrupt
-	  *     @arg USART_IT_TXE:  Transmit Data Register empty interrupt
-	  *     @arg USART_IT_TC:   Transmission complete interrupt
-	  *     @arg USART_IT_RXNE: Receive Data register not empty interrupt
-	  *     @arg USART_IT_IDLE: Idle line detection interrupt
-	  *     @arg USART_IT_PE:   Parity Error interrupt
-	  *     @arg USART_IT_ERR:  Error interrupt(Frame error, noise error, overrun error)
-	  * @param  NewState: new state of the specified USARTx interrupts.
-	  *   This parameter can be: ENABLE or DISABLE.
-	  * @retval None
-	  */
-	//USART_ITConfig(USART1, USART_IT_LBD, ENABLE);
-
-	//USART_SendData(USART_TypeDef* USARTx, uint16_t Data)
-	//USART_ReceiveData(USART_TypeDef* USARTx)
+  	//give priority for preemption
+	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
 
 	/* Enable timer for ports */
 	RCC->APB2ENR |= GPIO_BUZZER_RCC;//port C
@@ -485,21 +448,21 @@ int main(void)
     NVIC_EnableIRQ(USART1_IRQn);
 
 	/* Create the timer(s) */
-	buttonReleaseTimer = xTimerCreate( 	"LEDTimer", 				/* A text name, purely to help debugging. */
+	buttonReleaseTimer = xTimerCreate( 	"buttonTimer", 				/* A text name, purely to help debugging. */
 							((SPACE_TICK_LENGTH * 10) / portTICK_PERIOD_MS ),/* The timer period, in this case (SPACE_TICK_LENGTH * 10) ms. */
 							pdFALSE,					/* This is a one-shot timer, so xAutoReload is set to pdFALSE. */
 							( void * ) 0,				/* The ID is not used, so can be set to anything. */
 							TranslateMorseCode			/* The callback function that switches the LED off. */
 						);
 
-	DisplaySpaceTimer = xTimerCreate( 	"LEDTimer", 				/* A text name, purely to help debugging. */
+	DisplaySpaceTimer = xTimerCreate( 	"offTimer", 				/* A text name, purely to help debugging. */
 							(SPACE_TICK_LENGTH / portTICK_PERIOD_MS ),/* The timer period, in this case (SPACE_TICK_LENGTH * 10) ms. */
 							pdFALSE,					/* This is a one-shot timer, so xAutoReload is set to pdFALSE. */
 							( void * ) 0,				/* The ID is not used, so can be set to anything. */
 							DisplayOff			/* The callback function that switches the LED off. */
 						);
 
-	DisplayBeepTimer = xTimerCreate( 	"LEDTimer", 				/* A text name, purely to help debugging. */
+	DisplayBeepTimer = xTimerCreate( 	"onTimer", 				/* A text name, purely to help debugging. */
 							(BEEP_TICK_LENGTH / portTICK_PERIOD_MS ),/* The timer period, in this case (SPACE_TICK_LENGTH * 10) ms. */
 							pdFALSE,					/* This is a one-shot timer, so xAutoReload is set to pdFALSE. */
 							( void * ) 0,				/* The ID is not used, so can be set to anything. */
