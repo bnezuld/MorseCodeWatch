@@ -89,12 +89,12 @@ static void DisplayOn( TimerHandle_t xTimer )
 		if(xQueueReceive( displayQueue, &ulCount, 0) == pdTRUE)
 		{
 			vTimerSetTimerID( DisplaySpaceTimer, ( void * ) ulCount );
-			GPIOC->BSRR = (uint32_t)GPIO_PIN_8 << 16U;
+			GPIOC->BSRR = (uint32_t)GPIO_BUZZER_OUT << 16U;
 			xTimerReset(DisplaySpaceTimer, 0);
 			return;
 		}
 		else{
-			GPIOC->BSRR = (uint32_t)GPIO_PIN_8 << 16U;
+			GPIOC->BSRR = (uint32_t)GPIO_BUZZER_OUT << 16U;
 		}
 	}else{
 		ulCount--;
@@ -113,11 +113,11 @@ static void DisplayOff( TimerHandle_t xTimer )
 		if(xQueueReceive( displayQueue, &ulCount, 0) == pdTRUE)
 		{
 			vTimerSetTimerID( DisplayBeepTimer, ( void * ) ulCount );
-			GPIOC->BSRR = (uint32_t)GPIO_PIN_8;
+			GPIOC->BSRR = (uint32_t)GPIO_BUZZER_OUT;
 			xTimerReset(DisplayBeepTimer, 0);
 			return;
 		}else{
-			GPIOC->BSRR = (uint32_t)GPIO_PIN_8 << 16U;
+			GPIOC->BSRR = (uint32_t)GPIO_BUZZER_OUT << 16U;
 		}
 	}else{
 		ulCount--;
@@ -391,10 +391,22 @@ int main(void)
   	//give priority for preemption
 	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
 
+    GPIO_InitTypeDef gpioc_init_struct;
+
 	/* Enable timer for ports */
 	RCC->APB2ENR |= GPIO_BUZZER_RCC;//port C
-	initGPIO(GPIO_BUZZER_PORT, GPIO_BUZZER, GPIO_BUZZER_PIN_NUMBER, GPIO_Speed_50MHz);
-	initGPIO(GPIO_BUZZER_PORT, GPIO_PIN_8, 8, GPIO_Speed_50MHz);
+    gpioc_init_struct.GPIO_Pin = GPIO_BUZZER;
+    gpioc_init_struct.GPIO_Speed = GPIO_Speed_50MHz;
+    gpioc_init_struct.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_Init(GPIOC, &gpioc_init_struct);
+
+    gpioc_init_struct.GPIO_Pin = GPIO_BUZZER_OUT;
+	gpioc_init_struct.GPIO_Speed = GPIO_Speed_50MHz;
+	gpioc_init_struct.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_Init(GPIOC, &gpioc_init_struct);
+
+	//initGPIO(GPIO_BUZZER_PORT, GPIO_BUZZER, GPIO_BUZZER_PIN_NUMBER, GPIO_Speed_50MHz);
+	//initGPIO(GPIO_BUZZER_OUT_PORT, GPIO_BUZZER_OUT, GPIO_BUZZER_OUT_PIN_NUMBER, GPIO_Speed_50MHz);
 
 	/* Enable the BUTTON Clock */
 	RCC->APB2ENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO;//port A

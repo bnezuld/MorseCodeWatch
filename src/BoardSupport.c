@@ -19,7 +19,7 @@ void initGPIO(GPIO_TypeDef* GPIOx, uint32_t pin, uint32_t pinPosition, uint32_t 
 		  GPIOx->CRH = temp;
 	  }else
 	  {
-		  uint32_t pinOffset = pinPosition * 4;
+		  uint32_t pinOffset = (pinPosition - 1) * 4;
 		  uint32_t temp = GPIOx->CRL & ~((uint32_t)0x0F << pinOffset);
 		  temp |= speed << pinOffset;
 		  GPIOx->CRL = temp;
