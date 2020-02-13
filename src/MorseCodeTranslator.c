@@ -9,9 +9,13 @@
 
 /*could do this in a hashtable by using the 'position' to calculate the offset needed*/
 const char MorseCodeTable0[] = {'E','T'};
-const char MorseCodeTable1[] = {'I','A','N','M'};
-const char MorseCodeTable2[] = {'S','U','R','W','D','K','G','O'};
-const char MorseCodeTable3[] = {'H','V','F','-','L','-','P','J','B','X','C','Y','Z','Q'};
+const char MorseCodeTable1[] = {'I','N','A','M'};
+const char MorseCodeTable2[] = {'S','D','R','G','U','K','W','O'};
+const char MorseCodeTable3[] = {'H','B','L','Z','F','C','P','-','V','X','-','Q','-','Y','J','-'};
+
+/*hash table from char to morseCode*/
+const char* TranslateToMorseCode[] = {".-","-...","-.-.","-..",".","..-.","--.","....","..",".---","-.-",".-..","--","-.","---",".--.","--.-",".-.","...","-","..-","...-",".--","-..-","-.--","--.."};
+//const uint8_t TranslateToMorseCodeLength[] = {2,4,4,3,1,4,3,4,2,4,3,4,2,2,3,4,4,3,3,1,3,4,3,4,4,4};
 
 uint32_t BEEP_TICK_LENGTH = 100;
 uint32_t SPACE_TICK_LENGTH = 130;
@@ -19,6 +23,13 @@ uint32_t SPACE_TICK_LENGTH = 130;
 #define MAX_MORSECODE 100
 uint32_t button[MAX_MORSECODE];
 uint32_t buttonCount = 0;
+
+char* TranslateCharToMorseCode(char c)
+{
+	if(c >= 65 && c <= 65 + 25)
+		return TranslateToMorseCode[c - 65];
+	return (void *) 0;
+}
 
 char* TranslateSelf()
 {

@@ -10,6 +10,8 @@
 
 #include "LinkedList.h"
 
+char* TranslateCharToMorseCode(char c);
+
 char* Translate(uint32_t *morseCode, uint32_t *count);
 char* TranslateSelf();
 

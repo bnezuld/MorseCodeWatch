@@ -44,7 +44,7 @@ SOFTWARE.
 #define mainQUEUE_RECEIVE_TASK_PRIORITY		( tskIDLE_PRIORITY + 2 )
 #define	mainQUEUE_SEND_TASK_PRIORITY		( tskIDLE_PRIORITY + 1 )
 
-#define mainQUEUE_SEND_FREQUENCY_MS			( 100 / portTICK_PERIOD_MS )
+#define mainQUEUE_SEND_FREQUENCY_MS			( 50 / portTICK_PERIOD_MS )
 
 
 /* Private macro */
@@ -52,119 +52,279 @@ SOFTWARE.
 extern uint32_t BEEP_TICK_LENGTH;
 extern uint32_t SPACE_TICK_LENGTH;
 
-uint32_t startTick = 0;
-uint32_t ticks = 0;
-static QueueHandle_t xQueue = NULL, MessageQueue = NULL;
-SemaphoreHandle_t  xSemaphorePolling = NULL, xSemaphoreISR = NULL;
-static TimerHandle_t xLEDTimer = NULL;
+static QueueHandle_t buttonQueue = NULL, messageQueue = NULL, sendMessageQueue = NULL, displayQueue = NULL, uart1Queue = NULL;
+static SemaphoreHandle_t  semaphorePolling = NULL, semaphoreISR = NULL;
+static TimerHandle_t buttonReleaseTimer = NULL, DisplaySpaceTimer = NULL, DisplayBeepTimer = NULL;
 
 TaskHandle_t  RecordButtonPressesTask = NULL;
 
-
-uint8_t pressed = 0;
 struct ButtonPress{
 	uint32_t time;
 	uint8_t buttonState;
 };
+
 /* Private function prototypes */
 //task function(s)
 static void PollingTask( void *pvParameters );
 static void RecordButtonPresses( void *pvParameters );
+static void Menu( void *pvParameters );
+static void SendMessage( void *pvParameters );
+static void UartMessage( void *pvParameters );
+
+
 //timer callback function(s)
 static void TranslateMorseCode( TimerHandle_t xTimer );
-
+static void DisplayOn( TimerHandle_t xTimer );
+static void DisplayOff( TimerHandle_t xTimer );
 
 
 /* Private functions */
+
+static void DisplayOn( TimerHandle_t xTimer )
+{
+	int8_t ulCount = ( uint32_t ) pvTimerGetTimerID( xTimer );
+
+	if(ulCount == 0 )
+	{
+		if(xQueueReceive( displayQueue, &ulCount, 0) == pdTRUE)
+		{
+			vTimerSetTimerID( DisplaySpaceTimer, ( void * ) ulCount );
+			GPIOC->BSRR = (uint32_t)GPIO_PIN_8 << 16U;
+			xTimerReset(DisplaySpaceTimer, 0);
+			return;
+		}
+		else{
+			GPIOC->BSRR = (uint32_t)GPIO_PIN_8 << 16U;
+		}
+	}else{
+		ulCount--;
+		vTimerSetTimerID( xTimer, ( void * ) ulCount );
+		xTimerReset(DisplayBeepTimer, 0);
+	}
+	//TODO- give semaphore to send message
+}
+
+static void DisplayOff( TimerHandle_t xTimer )
+{
+	int8_t ulCount = ( uint32_t ) pvTimerGetTimerID( xTimer );
+
+	if(ulCount == 0 )
+	{
+		if(xQueueReceive( displayQueue, &ulCount, 0) == pdTRUE)
+		{
+			vTimerSetTimerID( DisplayBeepTimer, ( void * ) ulCount );
+			GPIOC->BSRR = (uint32_t)GPIO_PIN_8;
+			xTimerReset(DisplayBeepTimer, 0);
+			return;
+		}else{
+			GPIOC->BSRR = (uint32_t)GPIO_PIN_8 << 16U;
+		}
+	}else{
+		ulCount--;
+		vTimerSetTimerID( xTimer, ( void * ) ulCount );
+		xTimerReset(DisplaySpaceTimer, 0);
+	}
+	//TODO- give semaphore to send message
+}
+
+static void UartMessage( void *pvParameters ){
+	char *message;
+	char c;
+	uint32_t size = 1, place = 0;
+	uint8_t queued = 1;
+	for(;;){
+		xQueueReceive( uart1Queue, &c, portMAX_DELAY );
+		if(c == '\r'){
+			queued = 1;
+			size = 1;
+			place = 0;
+			xQueueSend( sendMessageQueue, &message, 0);
+			//queue message(will be freed here)
+		}else{
+			char *tmp = message;
+			message = malloc((size++ + 1) * sizeof(char));
+			if(queued == 0){
+				for(uint32_t i = 0; i < place; i++)
+				{
+					message[i] = tmp[i];
+				}
+				free(tmp);
+			}else{
+				queued = 0;
+			}
+			message[place++] = c;
+			message[place] = '\0';
+		}
+	}
+}
+
+static void SendMessage( void *pvParameters )
+{
+	char* message;
+	for(;;){
+		//TODO- wait for semaphore to send message
+		xQueueReceive( sendMessageQueue, &message, portMAX_DELAY );
+		char* tmpMsg = message;
+		int resetTimer = 1;//only reset timer once, although there is still a possible race condition if the queue empties before it finishes processing this message
+		while(*tmpMsg != '\0')
+		{
+			USART_SendData(USART1, *tmpMsg);
+			while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
+			//translate message
+			//queue up message for timers to use
+			char* c =  TranslateCharToMorseCode(*tmpMsg);
+			uint8_t validNextChar = *(tmpMsg + 1) != ' ';
+			while(*c != '\0')
+			{
+				int8_t val = -1;
+				if(*c == '.')
+					val = 0;
+				else if(*c == '-')
+					val = 2;
+
+				if(val >= 0){
+					xQueueSend( displayQueue, &val, portMAX_DELAY);//beep
+					val = 0;
+					if(*(c + 1) == '\0')
+					{
+						if(validNextChar == 1){
+							val = 2;
+							xQueueSend( displayQueue, &val, portMAX_DELAY);//space
+						}
+						else{
+							val = 6;
+							xQueueSend( displayQueue, &val, portMAX_DELAY);//space
+						}
+					}else
+					{
+						xQueueSend( displayQueue, &val, portMAX_DELAY);//space
+					}
+					if(resetTimer == 1){
+						xTimerReset(DisplaySpaceTimer, 0);
+						resetTimer = 0;
+					}
+				}
+				c++;
+			}
+			tmpMsg++;
+		}
+		free(message);
+		//vTimerSetTimerID( DisplayBeepTimer, ( void * )  tmpInt);
+	}
+}
+
+
 static void TranslateMorseCode( TimerHandle_t xTimer )
 {
 	//stop recorButtonPresses task(can i use semaphore, i think beter to do this since is activated by a timer, block time must be zero if using semaphore)
 	vTaskSuspend(RecordButtonPressesTask);
-	xSemaphoreTake(xSemaphoreISR, 0);//try to clear the semaphore for the ISR
-	xSemaphoreTake(xSemaphorePolling, 0);//try to clear the semaphore for the ISR
-	char* c = TranslateSelf();
+	xSemaphoreTake(semaphoreISR, 0);//try to clear the semaphore for the ISR
+	xSemaphoreTake(semaphorePolling, 0);//try to clear the semaphore for the ISR
 
+	char* message = TranslateSelf();
 
-	//MessageQueue
-	//figure out what to do with the message
+	xQueueSend( messageQueue, &message, 1);
 
 	//start recorButtonPresses task
 	vTaskResume(RecordButtonPressesTask);
-	xSemaphoreGive(xSemaphoreISR);//try to clear the semaphore for the ISR
+	xSemaphoreGive(semaphoreISR);//try to clear the semaphore for the ISR
+}
+
+static void Menu( void *pvParameters )
+{
+	char *message = NULL;
+	for(;;){
+		xQueueReceive( messageQueue, &message, portMAX_DELAY );
+		if(strcmp(message, "T") == 0)
+		{
+			free(message);
+			asm("nop");
+		}else if(strcmp(message, "M") == 0)
+		{
+			free(message);
+			xQueueReceive( messageQueue, &message, portMAX_DELAY );
+			asm("nop");
+			free(message);
+		}else if(strcmp(message, "N") == 0)
+		{
+			free(message);
+			char* test = "N";
+			xQueueSend( sendMessageQueue, &test, 0 );
+			xQueueReceive( messageQueue, &message, portMAX_DELAY );
+			xQueueSend( sendMessageQueue, &message, 0 );
+		}
+	}
 }
 
 static void RecordButtonPresses( void *pvParameters )
 {
-	struct ButtonPress button;
+	struct ButtonPress buttonRecord;
+	char *message;
 	for(;;)
 	{
-		//wait for something to be in the queue for portMAX_DELAY
-		xQueueReceive( xQueue, &button, portMAX_DELAY );
-		ButtonPress(button.time,button.buttonState);
-		//queue message(in an other queue)
-		//add semaphore to notify other task
-		//other task will stop the polling task and start it once finished
-		//the task will display back the message(in the case im thinking it will just morse code back the message to confirm, might want to do this a character a time)
+		//wait for something to be in the queue for portMAX_DELAY and record it
+		xQueueReceive( buttonQueue, &buttonRecord, portMAX_DELAY );
+		ButtonPress(buttonRecord.time,buttonRecord.buttonState);
 	}
 }
 
 static void PollingTask( void *pvParameters )
 {
 	TickType_t startTicks = 0;
-	struct ButtonPress button;
+	struct ButtonPress buttonRecord;
 	for(;;)
 	{
 		//wait for semaphore from interrupt
-		if( xSemaphorePolling != NULL )
+		if( semaphorePolling != NULL )
 		{
 			/* See if we can obtain the semaphore.  If the semaphore is not
 			available wait 10 ticks(can maybe increase this to max so it waits forever) to see if it becomes free. */
-			if( xSemaphoreTake( xSemaphorePolling, ( TickType_t ) 10 ) == pdTRUE ){
-				xTimerStop(xLEDTimer, 0);
+			if( xSemaphoreTake( semaphorePolling, ( TickType_t ) 10 ) == pdTRUE ){
+				xTimerStop(buttonReleaseTimer, 0);
 
 				TickType_t endTicks, difference;
-
-				//diffrence from button release
+				/* Record button press */
 				difference = xTaskGetTickCount() - startTicks;
 
-				//add to queue
-				button.buttonState = 0;//time from when it was released
-				button.time = difference;
-				xQueueSend( xQueue, &button, 0 );
+				buttonRecord.buttonState = 0;//time from when it was released
+				buttonRecord.time = difference;
+				xQueueSend( buttonQueue, &buttonRecord, 0 );
 
-				GPIOC->BSRR |= (uint32_t)GPIO_PIN_9;
+				GPIOC->BSRR |= (uint32_t)GPIO_BUZZER;
 
 				startTicks = xTaskGetTickCount();
 
 				/* Buton release polling */
 				while(GPIO_ReadInputDataBit(GPIOA, GPIO_PIN_0) != Bit_RESET){
 					//wait for the button to be unpressed(or maybe can connect same button to a interrupt that can release and it will wait for that semaphore?)
-
+					TickType_t tmpTicks = xTaskGetTickCount();
+					vTaskDelayUntil(&tmpTicks, mainQUEUE_SEND_FREQUENCY_MS );
 					//no operation(used to keep empty while loop working)
 					asm("nop");
 				}
 
-				GPIOC->BSRR = (uint32_t)GPIO_PIN_9 << 16U;
+				/* Record button release time*/
+				GPIOC->BSRR = (uint32_t)GPIO_BUZZER << 16U;
 
 				endTicks = xTaskGetTickCount();
-				difference = endTicks - startTicks;//button held time
-				//add to queue(button released, was held)
-				button.buttonState = 1;//time it was held for
-				button.time = difference;
-				xQueueSend( xQueue, &button, 1);
+				difference = endTicks - startTicks;
+
+				buttonRecord.buttonState = 1;
+				buttonRecord.time = difference;
+				xQueueSend( buttonQueue, &buttonRecord, 1);
 
 				//start Timer, to call the translate task
-				xTimerReset(xLEDTimer, 0);
-				xTimerStart(xLEDTimer, 0);
+				xTimerReset(buttonReleaseTimer, 0);
+				xTimerStart(buttonReleaseTimer, 0);
+
+				//record start ticks
+				startTicks = xTaskGetTickCount();
 
 				//block so ISR semaphore in ISR cannot be triggerd for a period of time
 				vTaskDelayUntil( &endTicks, mainQUEUE_SEND_FREQUENCY_MS );
 
-
 				//release semaphoreISR (giving the semaphore so ISR can happen and give this task the semaphore it needs)
-	            xSemaphoreGive( xSemaphoreISR );
-	            pressed = 0;
-				startTicks = xTaskGetTickCount();
+	            xSemaphoreGive( semaphoreISR );
 			}
 		}
 	}
@@ -175,8 +335,8 @@ void EXTI0_IRQHandler(void)
 	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
 
     if (EXTI_GetITStatus(EXTI_Line0) != RESET) {
-    	if(xSemaphoreTakeFromISR( xSemaphoreISR, &xHigherPriorityTaskWoken ) == pdTRUE){
-	        xSemaphoreGiveFromISR( xSemaphorePolling, &xHigherPriorityTaskWoken );
+    	if(xSemaphoreTakeFromISR( semaphoreISR, &xHigherPriorityTaskWoken ) == pdTRUE){
+	        xSemaphoreGiveFromISR( semaphorePolling, &xHigherPriorityTaskWoken );
     	}
     	/* Clear interrupt flag */
         EXTI_ClearITPendingBit(EXTI_Line0);
@@ -184,6 +344,27 @@ void EXTI0_IRQHandler(void)
 
 	portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
 }
+
+void USART1_IRQHandler(void)
+{
+	/* USER CODE BEGIN USART1_IRQn 0 */
+	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+
+	if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)
+	{
+		char data = USART_ReceiveData(USART1);
+		xQueueSendFromISR( uart1Queue, &data, xHigherPriorityTaskWoken);
+	}
+
+	portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
+	/* USER CODE END USART1_IRQn 0 */
+
+	/* USER CODE BEGIN USART1_IRQn 1 */
+
+	/* USER CODE END USART1_IRQn 1 */
+}
+
+
 /**
 **===========================================================================
 **
@@ -193,64 +374,170 @@ void EXTI0_IRQHandler(void)
 */
 int main(void)
 {
-  int i = 0;
+  	int i = 0;
 
-  /**
-  *  IMPORTANT NOTE!
-  *  The symbol VECT_TAB_SRAM needs to be defined when building the project
-  *  if code has been located to RAM and interrupts are used. 
-  *  Otherwise the interrupt table located in flash will be used.
-  *  See also the <system_*.c> file and how the SystemInit() function updates 
-  *  SCB->VTOR register.  
-  *  E.g.  SCB->VTOR = 0x20000000;  
-  */
+  	//give priority for preemption
+	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
 
-
-  /* TODO - Add your application code here */
-  /* GPIO Ports Clock Enable */
-  //give priority for preemption
-  NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
+	/**
+	*  IMPORTANT NOTE!
+	*  The symbol VECT_TAB_SRAM needs to be defined when building the project
+	*  if code has been located to RAM and interrupts are used.
+	*  Otherwise the interrupt table located in flash will be used.
+	*  See also the <system_*.c> file and how the SystemInit() function updates
+	*  SCB->VTOR register.
+	*  E.g.  SCB->VTOR = 0x20000000;
+	*/
 
 
-  /* Enable timer for ports */
-  RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;//port C
-  initGPIO(GPIOC, GPIO_PIN_9, 9, GPIO_Speed_50MHz);
-  initGPIO(GPIOC, GPIO_PIN_8, 8, GPIO_Speed_50MHz);
+	/* TODO - Add your application code here */
+	/* GPIO Ports Clock Enable */
 
-  /* Enable the BUTTON Clock */
-  RCC->APB2ENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO;//port A
 
-  /* Configure Button pin as input floating */
-  initGPIO(GPIOA, GPIO_Pin_0, 0, GPIO_Mode_IN_FLOATING);
-  initEXTI(GPIO_PortSourceGPIOA, GPIO_PinSource0, EXTI_Line0, EXTI_Mode_Interrupt, EXTI_Trigger_Rising, EXTI0_IRQn);
+	/*USART*/
+	//USART_ClockInitTypeDef* usartClockInit;
+	//USART_ClockStructInit(usartClockInit);
+	//USART_ClockInit(USART1, usartClockInit);
 
-  /* Create the timer(s) */
-  xLEDTimer = xTimerCreate( 	"LEDTimer", 				/* A text name, purely to help debugging. */
+
+	//USART_InitTypeDef* usartInit;
+	//USART_StructInit(usartInit);
+	//USART_Init(USART1, usartInit);
+
+	/**
+	  * @brief  Enables or disables the specified USART interrupts.
+	  * @param  USARTx: Select the USART or the UART peripheral.
+	  *   This parameter can be one of the following values:
+	  *   USART1, USART2, USART3, UART4 or UART5.
+	  * @param  USART_IT: specifies the USART interrupt sources to be enabled or disabled.
+	  *   This parameter can be one of the following values:
+	  *     @arg USART_IT_CTS:  CTS change interrupt (not available for UART4 and UART5)
+	  *     @arg USART_IT_LBD:  LIN Break detection interrupt
+	  *     @arg USART_IT_TXE:  Transmit Data Register empty interrupt
+	  *     @arg USART_IT_TC:   Transmission complete interrupt
+	  *     @arg USART_IT_RXNE: Receive Data register not empty interrupt
+	  *     @arg USART_IT_IDLE: Idle line detection interrupt
+	  *     @arg USART_IT_PE:   Parity Error interrupt
+	  *     @arg USART_IT_ERR:  Error interrupt(Frame error, noise error, overrun error)
+	  * @param  NewState: new state of the specified USARTx interrupts.
+	  *   This parameter can be: ENABLE or DISABLE.
+	  * @retval None
+	  */
+	//USART_ITConfig(USART1, USART_IT_LBD, ENABLE);
+
+	//USART_SendData(USART_TypeDef* USARTx, uint16_t Data)
+	//USART_ReceiveData(USART_TypeDef* USARTx)
+
+	/* Enable timer for ports */
+	RCC->APB2ENR |= GPIO_BUZZER_RCC;//port C
+	initGPIO(GPIO_BUZZER_PORT, GPIO_BUZZER, GPIO_BUZZER_PIN_NUMBER, GPIO_Speed_50MHz);
+	initGPIO(GPIO_BUZZER_PORT, GPIO_PIN_8, 8, GPIO_Speed_50MHz);
+
+	/* Enable the BUTTON Clock */
+	RCC->APB2ENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO;//port A
+
+	/* Configure Button pin as input floating */
+	initGPIO(GPIOA, GPIO_Pin_0, 0, GPIO_Mode_IN_FLOATING);
+	initEXTI(GPIO_PortSourceGPIOA, GPIO_PinSource0, EXTI_Line0, EXTI_Mode_Interrupt, EXTI_Trigger_Rising, EXTI0_IRQn);
+
+    /* USART configuration structure for USART1 */
+    USART_InitTypeDef usart1_init_struct;
+    /* Bit configuration structure for GPIOA PIN9 and PIN10 */
+    GPIO_InitTypeDef gpioa_init_struct;
+    NVIC_InitTypeDef NVIC_InitStructure;
+
+    /* Enalbe clock for USART1, AFIO and GPIOA */
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1 | RCC_APB2Periph_AFIO |
+                           RCC_APB2Periph_GPIOA, ENABLE);
+
+    /* GPIOA PIN9 alternative function Tx */
+    gpioa_init_struct.GPIO_Pin = GPIO_Pin_9;
+    gpioa_init_struct.GPIO_Speed = GPIO_Speed_50MHz;
+    gpioa_init_struct.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_Init(GPIOA, &gpioa_init_struct);
+    /* GPIOA PIN9 alternative function Rx */
+    gpioa_init_struct.GPIO_Pin = GPIO_Pin_10;
+    gpioa_init_struct.GPIO_Speed = GPIO_Speed_50MHz;
+    gpioa_init_struct.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    GPIO_Init(GPIOA, &gpioa_init_struct);
+
+    /* Enable USART1 */
+    USART_Cmd(USART1, ENABLE);
+    /* Baud rate 9600, 8-bit data, One stop bit
+     * No parity, Do both Rx and Tx, No HW flow control
+     */
+    usart1_init_struct.USART_BaudRate = 9600;
+    usart1_init_struct.USART_WordLength = USART_WordLength_8b;
+    usart1_init_struct.USART_StopBits = USART_StopBits_1;
+    usart1_init_struct.USART_Parity = USART_Parity_No ;
+    usart1_init_struct.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+    usart1_init_struct.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    /* Configure USART1 */
+    USART_Init(USART1, &usart1_init_struct);
+    /* Enable RXNE interrupt */
+    USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+    NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0xFF;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+    /* Enable USART1 global interrupt */
+    NVIC_EnableIRQ(USART1_IRQn);
+
+	/* Create the timer(s) */
+	buttonReleaseTimer = xTimerCreate( 	"LEDTimer", 				/* A text name, purely to help debugging. */
 							((SPACE_TICK_LENGTH * 10) / portTICK_PERIOD_MS ),/* The timer period, in this case (SPACE_TICK_LENGTH * 10) ms. */
 							pdFALSE,					/* This is a one-shot timer, so xAutoReload is set to pdFALSE. */
 							( void * ) 0,				/* The ID is not used, so can be set to anything. */
 							TranslateMorseCode			/* The callback function that switches the LED off. */
 						);
 
-  /* Create the queue. */
-  xQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( struct ButtonPress ) );
-  MessageQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( char* ) );
+	DisplaySpaceTimer = xTimerCreate( 	"LEDTimer", 				/* A text name, purely to help debugging. */
+							(SPACE_TICK_LENGTH / portTICK_PERIOD_MS ),/* The timer period, in this case (SPACE_TICK_LENGTH * 10) ms. */
+							pdFALSE,					/* This is a one-shot timer, so xAutoReload is set to pdFALSE. */
+							( void * ) 0,				/* The ID is not used, so can be set to anything. */
+							DisplayOff			/* The callback function that switches the LED off. */
+						);
 
-  xSemaphorePolling = xSemaphoreCreateBinary();
-  xSemaphoreISR = xSemaphoreCreateBinary();
-  xSemaphoreGive(xSemaphoreISR);
+	DisplayBeepTimer = xTimerCreate( 	"LEDTimer", 				/* A text name, purely to help debugging. */
+							(BEEP_TICK_LENGTH / portTICK_PERIOD_MS ),/* The timer period, in this case (SPACE_TICK_LENGTH * 10) ms. */
+							pdFALSE,					/* This is a one-shot timer, so xAutoReload is set to pdFALSE. */
+							( void * ) 0,				/* The ID is not used, so can be set to anything. */
+							DisplayOn			/* The callback function that switches the LED off. */
+						);
 
-  /* create the task(s) */
-  xTaskCreate( PollingTask, "ButtonPolling", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_SEND_TASK_PRIORITY, NULL );
-  xTaskCreate( RecordButtonPresses, "RecordBP", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY, &RecordButtonPressesTask );
+	/* Create the queue. */
+	buttonQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( struct ButtonPress ) );
+	messageQueue = xQueueCreate( 10, sizeof( char* ) );
+	sendMessageQueue = xQueueCreate( 10, sizeof( char* ) );
+	displayQueue = xQueueCreate( 10, sizeof( int8_t ) );
+	uart1Queue = xQueueCreate( 10, sizeof( char ) );
 
-  /*start tasks*/
-  vTaskStartScheduler();
+	semaphorePolling = xSemaphoreCreateBinary();
+	semaphoreISR = xSemaphoreCreateBinary();
+	xSemaphoreGive(semaphoreISR);
 
-  /* Infinite loop (should never hit) */
-  while (1)
-  {
-  }
+	/* create the task(s) */
+	xTaskCreate( PollingTask, "ButtonPolling", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 4, NULL );
+	xTaskCreate( RecordButtonPresses, "RecordBP", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY, &RecordButtonPressesTask );
+	xTaskCreate( Menu, "Menu", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 1, NULL );
+	xTaskCreate( SendMessage, "sendMessage", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 3, NULL );
+	xTaskCreate( UartMessage, "uartMessage", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 2, NULL );
+
+//	char* test = malloc(10 * sizeof(char));
+//	test[0] = 'S';
+//	test[1] = 'O';
+//	test[2] = 'S';
+//	test[3] = '\0';
+//	xQueueSend( sendMessageQueue, &test, 0 );
+
+	/*start tasks*/
+	vTaskStartScheduler();
+
+	/* Infinite loop (should never hit) */
+	while (1)
+	{
+	}
 }
 
 /*
