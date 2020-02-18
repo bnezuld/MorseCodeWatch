@@ -944,32 +944,32 @@ __attribute__(( weak )) void vPortSetupTimerInterrupt( void )
 
 	/* Stop and clear the SysTick. */
 	portNVIC_SYSTICK_CTRL_REG = 0UL;
- 80005cc:	4b07      	ldr	r3, [pc, #28]	; (80005ec <vPortSetupTimerInterrupt+0x24>)
+ 80005cc:	4b08      	ldr	r3, [pc, #32]	; (80005f0 <vPortSetupTimerInterrupt+0x28>)
  80005ce:	2200      	movs	r2, #0
  80005d0:	601a      	str	r2, [r3, #0]
 	portNVIC_SYSTICK_CURRENT_VALUE_REG = 0UL;
- 80005d2:	4b07      	ldr	r3, [pc, #28]	; (80005f0 <vPortSetupTimerInterrupt+0x28>)
+ 80005d2:	4b08      	ldr	r3, [pc, #32]	; (80005f4 <vPortSetupTimerInterrupt+0x2c>)
  80005d4:	2200      	movs	r2, #0
  80005d6:	601a      	str	r2, [r3, #0]
 
 	/* Configure SysTick to interrupt at the requested rate. */
 	portNVIC_SYSTICK_LOAD_REG = ( configSYSTICK_CLOCK_HZ / configTICK_RATE_HZ ) - 1UL;
- 80005d8:	4b06      	ldr	r3, [pc, #24]	; (80005f4 <vPortSetupTimerInterrupt+0x2c>)
- 80005da:	4a07      	ldr	r2, [pc, #28]	; (80005f8 <vPortSetupTimerInterrupt+0x30>)
- 80005dc:	601a      	str	r2, [r3, #0]
+ 80005d8:	4b07      	ldr	r3, [pc, #28]	; (80005f8 <vPortSetupTimerInterrupt+0x30>)
+ 80005da:	f641 421f 	movw	r2, #7199	; 0x1c1f
+ 80005de:	601a      	str	r2, [r3, #0]
 	portNVIC_SYSTICK_CTRL_REG = ( portNVIC_SYSTICK_CLK_BIT | portNVIC_SYSTICK_INT_BIT | portNVIC_SYSTICK_ENABLE_BIT );
- 80005de:	4b03      	ldr	r3, [pc, #12]	; (80005ec <vPortSetupTimerInterrupt+0x24>)
- 80005e0:	2207      	movs	r2, #7
- 80005e2:	601a      	str	r2, [r3, #0]
+ 80005e0:	4b03      	ldr	r3, [pc, #12]	; (80005f0 <vPortSetupTimerInterrupt+0x28>)
+ 80005e2:	2207      	movs	r2, #7
+ 80005e4:	601a      	str	r2, [r3, #0]
 }
- 80005e4:	bf00      	nop
- 80005e6:	46bd      	mov	sp, r7
- 80005e8:	bc80      	pop	{r7}
- 80005ea:	4770      	bx	lr
- 80005ec:	e000e010 	.word	0xe000e010
- 80005f0:	e000e018 	.word	0xe000e018
- 80005f4:	e000e014 	.word	0xe000e014
- 80005f8:	0001193f 	.word	0x0001193f
+ 80005e6:	bf00      	nop
+ 80005e8:	46bd      	mov	sp, r7
+ 80005ea:	bc80      	pop	{r7}
+ 80005ec:	4770      	bx	lr
+ 80005ee:	bf00      	nop
+ 80005f0:	e000e010 	.word	0xe000e010
+ 80005f4:	e000e018 	.word	0xe000e018
+ 80005f8:	e000e014 	.word	0xe000e014
 
 080005fc <vPortValidateInterruptPriority>:
 /*-----------------------------------------------------------*/
