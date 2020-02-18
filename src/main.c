@@ -89,12 +89,12 @@ static void DisplayOn( TimerHandle_t xTimer )
 		if(xQueueReceive( displayQueue, &ulCount, 0) == pdTRUE)
 		{
 			vTimerSetTimerID( DisplaySpaceTimer, ( void * ) ulCount );
-			GPIOC->BSRR = (uint32_t)GPIO_BUZZER_OUT << 16U;
+			GPIO_BUZZER_OUT_PORT->BRR = (uint32_t)GPIO_BUZZER_OUT;// << 16U;
 			xTimerReset(DisplaySpaceTimer, 0);
 			return;
 		}
 		else{
-			GPIOC->BSRR = (uint32_t)GPIO_BUZZER_OUT << 16U;
+			GPIO_BUZZER_OUT_PORT->BRR = (uint32_t)GPIO_BUZZER_OUT;// << 16U;
 		}
 	}else{
 		ulCount--;
@@ -113,11 +113,11 @@ static void DisplayOff( TimerHandle_t xTimer )
 		if(xQueueReceive( displayQueue, &ulCount, 0) == pdTRUE)
 		{
 			vTimerSetTimerID( DisplayBeepTimer, ( void * ) ulCount );
-			GPIOC->BSRR = (uint32_t)GPIO_BUZZER_OUT;
+			GPIO_BUZZER_OUT_PORT->BSRR = (uint32_t)GPIO_BUZZER_OUT;
 			xTimerReset(DisplayBeepTimer, 0);
 			return;
 		}else{
-			GPIOC->BSRR = (uint32_t)GPIO_BUZZER_OUT << 16U;
+			GPIO_BUZZER_OUT_PORT->BRR = (uint32_t)GPIO_BUZZER_OUT;// << 16U;
 		}
 	}else{
 		ulCount--;
@@ -292,7 +292,7 @@ static void PollingTask( void *pvParameters )
 				buttonRecord.time = difference;
 				xQueueSend( buttonQueue, &buttonRecord, 0 );
 
-				GPIOC->BSRR |= (uint32_t)GPIO_BUZZER;
+				GPIO_BUZZER_PORT->BSRR = (uint32_t)GPIO_BUZZER;
 
 				startTicks = xTaskGetTickCount();
 
@@ -306,7 +306,7 @@ static void PollingTask( void *pvParameters )
 				}
 
 				/* Record button release time*/
-				GPIOC->BSRR = (uint32_t)GPIO_BUZZER << 16U;
+				GPIO_BUZZER_PORT->BRR = (uint32_t)GPIO_BUZZER;// << 16U;
 
 				endTicks = xTaskGetTickCount();
 				difference = endTicks - startTicks;
@@ -392,18 +392,19 @@ int main(void)
 	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
 
     GPIO_InitTypeDef gpioc_init_struct;
+    GPIO_InitTypeDef gpioButton_init_struct;
 
 	/* Enable timer for ports */
 	RCC->APB2ENR |= GPIO_BUZZER_RCC;//port C
     gpioc_init_struct.GPIO_Pin = GPIO_BUZZER;
     gpioc_init_struct.GPIO_Speed = GPIO_Speed_50MHz;
     gpioc_init_struct.GPIO_Mode = GPIO_Mode_Out_PP;
-    GPIO_Init(GPIOC, &gpioc_init_struct);
+    GPIO_Init(GPIO_BUZZER_PORT, &gpioc_init_struct);
 
     gpioc_init_struct.GPIO_Pin = GPIO_BUZZER_OUT;
 	gpioc_init_struct.GPIO_Speed = GPIO_Speed_50MHz;
 	gpioc_init_struct.GPIO_Mode = GPIO_Mode_Out_PP;
-	GPIO_Init(GPIOC, &gpioc_init_struct);
+	GPIO_Init(GPIO_BUZZER_OUT_PORT, &gpioc_init_struct);
 
 	//initGPIO(GPIO_BUZZER_PORT, GPIO_BUZZER, GPIO_BUZZER_PIN_NUMBER, GPIO_Speed_50MHz);
 	//initGPIO(GPIO_BUZZER_OUT_PORT, GPIO_BUZZER_OUT, GPIO_BUZZER_OUT_PIN_NUMBER, GPIO_Speed_50MHz);
@@ -412,8 +413,32 @@ int main(void)
 	RCC->APB2ENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO;//port A
 
 	/* Configure Button pin as input floating */
-	initGPIO(GPIOA, GPIO_Pin_0, 0, GPIO_Mode_IN_FLOATING);
-	initEXTI(GPIO_PortSourceGPIOA, GPIO_PinSource0, EXTI_Line0, EXTI_Mode_Interrupt, EXTI_Trigger_Rising, EXTI0_IRQn);
+	gpioButton_init_struct.GPIO_Pin = GPIO_PIN_0;
+	gpioButton_init_struct.GPIO_Mode = 8;//GPIO_Mode_IN_FLOATING;
+	GPIO_Init(GPIOA, &gpioButton_init_struct);
+	//initEXTI(GPIO_PortSourceGPIOA, GPIO_PinSource1, EXTI_Line1, EXTI_Mode_Interrupt, EXTI_Trigger_Rising, EXTI1_IRQn);
+
+	GPIO_EXTILineConfig(GPIO_PortSourceGPIOA, GPIO_PinSource0);
+
+	EXTI_InitTypeDef EXTI_InitStructure;
+	NVIC_InitTypeDef NVIC_InitStructure1;
+
+	/* Configure Button EXTI line */
+	EXTI_InitStructure.EXTI_Line = EXTI_Line0;
+	EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+
+	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
+
+	EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+	EXTI_Init(&EXTI_InitStructure);
+
+	/* Enable and set Button EXTI Interrupt to the lowest priority */
+	NVIC_InitStructure1.NVIC_IRQChannel = EXTI0_IRQn;
+	NVIC_InitStructure1.NVIC_IRQChannelPreemptionPriority = 0x0F;
+	NVIC_InitStructure1.NVIC_IRQChannelSubPriority = 0x0F;
+	NVIC_InitStructure1.NVIC_IRQChannelCmd = ENABLE;
+
+	NVIC_Init(&NVIC_InitStructure1);
 
     /* USART configuration structure for USART1 */
     USART_InitTypeDef usart1_init_struct;
