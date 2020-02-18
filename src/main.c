@@ -168,8 +168,8 @@ static void SendMessage( void *pvParameters )
 		int resetTimer = 1;//only reset timer once, although there is still a possible race condition if the queue empties before it finishes processing this message
 		while(*tmpMsg != '\0')
 		{
-			USART_SendData(USART1, *tmpMsg);
-			while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
+			//USART_SendData(USART1, *tmpMsg);
+			//while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
 			//translate message
 			//queue up message for timers to use
 			char* c =  TranslateCharToMorseCode(*tmpMsg);
@@ -352,7 +352,7 @@ void USART1_IRQHandler(void)
 	/* USER CODE BEGIN USART1_IRQn 0 */
 	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
 
-	if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)
+   	if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)
 	{
 		char data = USART_ReceiveData(USART1);
 		xQueueSendFromISR( uart1Queue, &data, xHigherPriorityTaskWoken);
@@ -486,7 +486,7 @@ int main(void)
 	messageQueue = xQueueCreate( 10, sizeof( char* ) );
 	sendMessageQueue = xQueueCreate( 10, sizeof( char* ) );
 	displayQueue = xQueueCreate( 10, sizeof( int8_t ) );
-	uart1Queue = xQueueCreate( 10, sizeof( char ) );
+	uart1Queue = xQueueCreate( 100, sizeof( char ) );
 
 	semaphorePolling = xSemaphoreCreateBinary();
 	semaphoreISR = xSemaphoreCreateBinary();
