@@ -57,11 +57,13 @@ static QueueHandle_t buttonQueue = NULL,
 		messageQueue = NULL,
 		//send message Queue: contains char* which must be dynamically allocated and freed as the queue is emptied
 		sendMessageQueue = NULL,
+		//notification Queue: contains char* which must be dynamically allocated and freed as the queue is emptied
+		notificationQueue = NULL,
 		//display queue: used in the timers to turn on and off the buzzer
 		displayQueue = NULL,
 		//uart1 queue: queues individual characters to be put together and then queued(for notifications)
 		uart1Queue = NULL;
-static SemaphoreHandle_t  semaphorePolling = NULL, semaphoreISR = NULL;
+static SemaphoreHandle_t  semaphorePolling = NULL, semaphoreISR = NULL, semaphoreSendMessage = NULL, semaphoreStopSendMessage = NULL;
 static TimerHandle_t buttonReleaseTimer = NULL, DisplaySpaceTimer = NULL, DisplayBeepTimer = NULL;
 
 TaskHandle_t  RecordButtonPressesTask = NULL;
@@ -105,6 +107,7 @@ static void DisplayOn( TimerHandle_t xTimer )
 			return;
 		}else{
 			GPIO_BUZZER_OUT_PORT->BRR = (uint32_t)GPIO_BUZZER_OUT;// << 16U;
+			xSemaphoreGive(semaphoreSendMessage);
 		}
 	}else{
 		ulCount--;
@@ -128,6 +131,7 @@ static void DisplayOff( TimerHandle_t xTimer )
 			return;
 		}else{
 			GPIO_BUZZER_OUT_PORT->BRR = (uint32_t)GPIO_BUZZER_OUT;// << 16U;
+			xSemaphoreGive(semaphoreSendMessage);
 		}
 	}else{
 		ulCount--;
@@ -148,7 +152,7 @@ static void UartMessage( void *pvParameters ){
 			queued = 1;
 			size = 1;
 			place = 0;
-			xQueueSend( sendMessageQueue, &message, 0);
+			xQueueSend( notificationQueue, &message, 0);
 			//queue message(will be freed here)
 		}else{
 			char *tmp = message;
@@ -168,58 +172,70 @@ static void UartMessage( void *pvParameters ){
 	}
 }
 
-static void SendMessage( void *pvParameters )
+static void SendMessage(void *pvParameters )
 {
 	char* message;
 	for(;;){
-		//TODO- wait for semaphore to send message
-		xQueueReceive( sendMessageQueue, &message, portMAX_DELAY );
-		char* tmpMsg = message;
-		int resetTimer = 1;//only reset timer once, although there is still a possible race condition if the queue empties before it finishes processing this message
-		while(*tmpMsg != '\0')
+		//wait for previous write to finish
+		if(xSemaphoreTake( semaphoreSendMessage, portMAX_DELAY ) == pdTRUE)
 		{
-			//USART_SendData(USART1, *tmpMsg);
-			//while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
-			//translate message
-			//queue up message for timers to use
-			char* c =  TranslateCharToMorseCode(*tmpMsg);
-			uint8_t validNextChar = *(tmpMsg + 1) != ' ';
-			while(*c != '\0')
+			//check to see if there is a message to be sent
+			if(xQueuePeek( sendMessageQueue, &message, portMAX_DELAY ) == pdTRUE)
 			{
-				int8_t val = -1;
-				if(*c == '.')
-					val = 0;
-				else if(*c == '-')
-					val = 2;
-
-				if(val >= 0){
-					xQueueSend( displayQueue, &val, portMAX_DELAY);//beep
-					val = 0;
-					if(*(c + 1) == '\0')
+				char* tmpMsg = message;
+				int resetTimer = 1;//only reset timer once, although there is still a possible race condition if the queue empties before it finishes processing this message
+				while(*tmpMsg != '\0')
+				{
+					//USART_SendData(USART1, *tmpMsg);
+					//while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
+					//translate message
+					//queue up message for timers to use
+					char* c =  TranslateCharToMorseCode(*tmpMsg);
+					uint8_t validNextChar = *(tmpMsg + 1) != ' ';
+					while(*c != '\0')
 					{
-						if(validNextChar == 1){
+						if(xSemaphoreTake( semaphoreStopSendMessage, 0 ) == pdTRUE)
+						{
+							*(tmpMsg + 1) = '\0';
+							break;
+						}
+						int8_t val = -1;
+						if(*c == '.')
+							val = 0;
+						else if(*c == '-')
 							val = 2;
-							xQueueSend( displayQueue, &val, portMAX_DELAY);//space
+
+						if(val >= 0){
+							xQueueSend( displayQueue, &val, portMAX_DELAY);//beep
+							val = 0;
+							if(*(c + 1) == '\0')
+							{
+								if(validNextChar == 1){
+									val = 2;
+									xQueueSend( displayQueue, &val, portMAX_DELAY);//space
+								}
+								else{
+									val = 6;
+									xQueueSend( displayQueue, &val, portMAX_DELAY);//space
+								}
+							}else
+							{
+								xQueueSend( displayQueue, &val, portMAX_DELAY);//space
+							}
+							if(resetTimer == 1){
+								xTimerReset(DisplaySpaceTimer, 0);
+								resetTimer = 0;
+							}
 						}
-						else{
-							val = 6;
-							xQueueSend( displayQueue, &val, portMAX_DELAY);//space
-						}
-					}else
-					{
-						xQueueSend( displayQueue, &val, portMAX_DELAY);//space
+						c++;
 					}
-					if(resetTimer == 1){
-						xTimerReset(DisplaySpaceTimer, 0);
-						resetTimer = 0;
-					}
+					tmpMsg++;
 				}
-				c++;
+				free(message);
+				xQueueReceive( sendMessageQueue, &message, portMAX_DELAY );
+				//give semaphore or free queue
 			}
-			tmpMsg++;
 		}
-		free(message);
-		//vTimerSetTimerID( DisplayBeepTimer, ( void * )  tmpInt);
 	}
 }
 
@@ -248,26 +264,46 @@ static void Menu( void *pvParameters )
 		if(strcmp(message, "T") == 0)
 		{
 			free(message);
-			asm("nop");
 		}else if(strcmp(message, "M") == 0)
 		{
 			free(message);
 			xQueueReceive( messageQueue, &message, portMAX_DELAY );
-			asm("nop");
 			free(message);
 		}else if(strcmp(message, "N") == 0)
 		{
 			free(message);
+
 			char* test = malloc(2 * sizeof(char));
 			test[0] = 'N';
 			test[1] = '\0';
-			xQueueSend( sendMessageQueue, &test, 0 );
-			xQueueReceive( messageQueue, &message, portMAX_DELAY );
-			xQueueSend( sendMessageQueue, &message, 0 );
+			//try to queue test
+			if(xQueueSend(sendMessageQueue, &test, 10) == pdTRUE)
+			{
+				if(xQueueReceive( notificationQueue, &message, 10 ) == pdTRUE)
+				{
+					//queue message in sendMessage since it is caught in the SendMessage function
+					xQueueSend(sendMessageQueue, &message, portMAX_DELAY);
+				}
+			}else
+			{
+				free(test);
+			}
 		}else if(strcmp(message, "I") == 0)
 		{
 			free(message);
+			xSemaphoreGive(semaphoreStopSendMessage);
+			xQueueReset(displayQueue);
+			//xQueueReceive( displayQueue, &message, portMAX_DELAY );
+			//xQueueSend(sendMessageQueue, &message, portMAX_DELAY);
+
 			//clear display message queue
+		}else if(strcmp(message, "R") == 0)
+		{
+			free(message);
+			//reply to previous Notification?
+		}else
+		{
+			free(message);
 		}
 	}
 }
@@ -592,19 +628,23 @@ int main(void)
 	/* Create the queue. */
 	buttonQueue = xQueueCreate( mainQUEUE_LENGTH, sizeof( struct ButtonPress ) );
 	messageQueue = xQueueCreate( 10, sizeof( char* ) );
-	sendMessageQueue = xQueueCreate( 10, sizeof( char* ) );
+	sendMessageQueue = xQueueCreate( 1, sizeof( char* ) );
+	notificationQueue = xQueueCreate( 10, sizeof( char* ) );
 	displayQueue = xQueueCreate( 10, sizeof( int8_t ) );
 	uart1Queue = xQueueCreate( 100, sizeof( char ) );
 
 	semaphorePolling = xSemaphoreCreateBinary();
 	semaphoreISR = xSemaphoreCreateBinary();
+	semaphoreSendMessage = xSemaphoreCreateBinary();
+	semaphoreStopSendMessage = xSemaphoreCreateBinary();
 	xSemaphoreGive(semaphoreISR);
+	xSemaphoreGive(semaphoreSendMessage);
 
 	/* create the task(s) */
 	xTaskCreate( PollingTask, "ButtonPolling", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 4, NULL );
 	xTaskCreate( RecordButtonPresses, "RecordBP", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY, &RecordButtonPressesTask );
-	xTaskCreate( Menu, "Menu", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 1, NULL );
-	xTaskCreate( SendMessage, "sendMessage", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 3, NULL );
+	xTaskCreate( Menu, "Menu", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 3, NULL );
+	xTaskCreate( SendMessage, "sendMessage", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 1, NULL );
 	xTaskCreate( UartMessage, "uartMessage", configMINIMAL_STACK_SIZE, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY + 2, NULL );
 
 //	char* test = malloc(10 * sizeof(char));
