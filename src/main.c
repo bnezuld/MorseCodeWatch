@@ -52,7 +52,15 @@ SOFTWARE.
 extern uint32_t BEEP_TICK_LENGTH;
 extern uint32_t SPACE_TICK_LENGTH;
 
-static QueueHandle_t buttonQueue = NULL, messageQueue = NULL, sendMessageQueue = NULL, displayQueue = NULL, uart1Queue = NULL;
+static QueueHandle_t buttonQueue = NULL,
+		//message Queue: contains char* which must be dynamically allocated and freed as the queue is emptied
+		messageQueue = NULL,
+		//send message Queue: contains char* which must be dynamically allocated and freed as the queue is emptied
+		sendMessageQueue = NULL,
+		//display queue: used in the timers to turn on and off the buzzer
+		displayQueue = NULL,
+		//uart1 queue: queues individual characters to be put together and then queued(for notifications)
+		uart1Queue = NULL;
 static SemaphoreHandle_t  semaphorePolling = NULL, semaphoreISR = NULL;
 static TimerHandle_t buttonReleaseTimer = NULL, DisplaySpaceTimer = NULL, DisplayBeepTimer = NULL;
 
@@ -64,6 +72,9 @@ struct ButtonPress{
 };
 
 /* Private function prototypes */
+void i2c_bus_write(uint8_t address, uint8_t *ptxbuf);
+void i2c_bus_read(uint8_t address, uint8_t *ptxbuf);
+
 //task function(s)
 static void PollingTask( void *pvParameters );
 static void RecordButtonPresses( void *pvParameters );
@@ -82,7 +93,7 @@ static void DisplayOff( TimerHandle_t xTimer );
 
 static void DisplayOn( TimerHandle_t xTimer )
 {
-	int8_t ulCount = ( uint32_t ) pvTimerGetTimerID( xTimer );
+	int8_t ulCount = ( int32_t ) pvTimerGetTimerID( xTimer );
 
 	if(ulCount == 0 )
 	{
@@ -92,8 +103,7 @@ static void DisplayOn( TimerHandle_t xTimer )
 			GPIO_BUZZER_OUT_PORT->BRR = (uint32_t)GPIO_BUZZER_OUT;// << 16U;
 			xTimerReset(DisplaySpaceTimer, 0);
 			return;
-		}
-		else{
+		}else{
 			GPIO_BUZZER_OUT_PORT->BRR = (uint32_t)GPIO_BUZZER_OUT;// << 16U;
 		}
 	}else{
@@ -106,7 +116,7 @@ static void DisplayOn( TimerHandle_t xTimer )
 
 static void DisplayOff( TimerHandle_t xTimer )
 {
-	int8_t ulCount = ( uint32_t ) pvTimerGetTimerID( xTimer );
+	int8_t ulCount = ( int32_t ) pvTimerGetTimerID( xTimer );
 
 	if(ulCount == 0 )
 	{
@@ -254,6 +264,10 @@ static void Menu( void *pvParameters )
 			xQueueSend( sendMessageQueue, &test, 0 );
 			xQueueReceive( messageQueue, &message, portMAX_DELAY );
 			xQueueSend( sendMessageQueue, &message, 0 );
+		}else if(strcmp(message, "I") == 0)
+		{
+			free(message);
+			//clear display message queue
 		}
 	}
 }
@@ -364,6 +378,75 @@ void USART1_IRQHandler(void)
 	/* USER CODE BEGIN USART1_IRQn 1 */
 
 	/* USER CODE END USART1_IRQn 1 */
+}
+
+void i2c_bus_read(uint8_t address, uint8_t *rxbuf) {
+	uint8_t recieve = 0;
+	volatile uint32_t i = 0;
+	while(i < 10000) i++;
+	I2C_GenerateSTART(I2C2, ENABLE);
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_MODE_SELECT)) {
+		;
+	}
+
+	I2C_Send7bitAddress(I2C2, address << 1, I2C_Direction_Transmitter);
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED))
+		;
+
+	//write two 8 bit word for the address
+	I2C_SendData(I2C2, (0x70));
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
+		;
+	I2C_SendData(I2C2, (0x00));
+		while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
+			;
+
+	I2C_GenerateSTOP(I2C2, ENABLE);
+
+	I2C_GenerateSTART(I2C2, ENABLE);
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_MODE_SELECT)) {
+		;
+	}
+	I2C_AcknowledgeConfig(I2C2, ENABLE);
+	I2C_Send7bitAddress(I2C2, address << 1, I2C_Direction_Receiver);
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED))
+		;
+
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_RECEIVED))
+				;
+			recieve = I2C_ReceiveData(I2C2);
+
+	I2C_AcknowledgeConfig(I2C2, DISABLE);
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_RECEIVED))
+		;
+	recieve = I2C_ReceiveData(I2C2);
+	I2C_GenerateSTOP(I2C2, ENABLE);
+}
+
+void i2c_bus_write(uint8_t address, uint8_t *ptxbuf) {
+	I2C_GenerateSTART(I2C2, ENABLE);
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_MODE_SELECT)) {
+		;
+	}
+
+	I2C_Send7bitAddress(I2C2, address << 1, I2C_Direction_Transmitter);
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED))
+		;
+
+	//write two 8 bit word for the address
+	I2C_SendData(I2C2, *(ptxbuf++));
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
+		;
+	I2C_SendData(I2C2, *(ptxbuf++));
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
+		;
+
+	//write data
+	I2C_SendData(I2C2, *(ptxbuf++));
+	while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
+		;
+
+	I2C_GenerateSTOP(I2C2, ENABLE);
 }
 
 
@@ -530,6 +613,12 @@ int main(void)
 //	test[2] = 'S';
 //	test[3] = '\0';
 //	xQueueSend( sendMessageQueue, &test, 0 );
+
+	//initI2C();
+	//i2c_bus_write(0x50, NULL);
+	//i2c_bus_read(0x50, NULL);
+	//i2c_bus_write(0x50, NULL);
+	//i2c_bus_read(0x50, NULL);
 
 	/*start tasks*/
 	vTaskStartScheduler();

@@ -72,3 +72,45 @@ void initEXTI(uint32_t GPIO_PortSourceGPIOx, uint32_t GPIO_PinSource, uint32_t E
 	(uint32_t)0x01 << (EXTI_IRQn & (uint8_t)0x1F);
 }
 
+void initI2C()
+{
+	GPIO_InitTypeDef GPIO_InitStructure;
+	I2C_InitTypeDef  I2C_InitStructure;
+
+	// I2C Clock Enable
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C2, ENABLE);
+
+	// GPIOx clock enable
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+
+	// Reset I2C peripheral
+	RCC_APB1PeriphResetCmd(RCC_APB1Periph_I2C2, ENABLE);
+	RCC_APB1PeriphResetCmd(RCC_APB1Periph_I2C2, DISABLE);
+
+	// Connect I2C pins to AF
+	//GPIO_PinAFConfig(GPIOB, LCD_SCL_GPIO_PinSourcex, LCD_GPIO_AF_I2Cx);
+	//GPIO_PinAFConfig(GPIOB, LCD_SDA_GPIO_PinSourcex, LCD_GPIO_AF_I2Cx);
+
+	// I2C GPIO pin configuration
+	GPIO_StructInit(&GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_OD;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_Pin   = GPIO_PIN_10;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Pin   = GPIO_PIN_11;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	// I2C struct init
+	I2C_StructInit(&I2C_InitStructure);
+	I2C_InitStructure.I2C_ClockSpeed          = 80000;//100 khz
+	I2C_InitStructure.I2C_Mode                = I2C_Mode_I2C;
+	I2C_InitStructure.I2C_DutyCycle           = I2C_DutyCycle_2;//16_9;
+	I2C_InitStructure.I2C_Ack                 = I2C_Ack_Enable;
+	I2C_InitStructure.I2C_OwnAddress1		  = 0x20;
+	I2C_InitStructure.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
+	I2C_Init(I2C2,&I2C_InitStructure);
+	I2C_Cmd(I2C2, ENABLE);
+
+}

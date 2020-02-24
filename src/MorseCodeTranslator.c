@@ -20,7 +20,7 @@ const char* TranslateToMorseCode[] = {".-","-...","-.-.","-..",".","..-.","--.",
 uint32_t BEEP_TICK_LENGTH = 100;
 uint32_t SPACE_TICK_LENGTH = 130;
 
-#define MAX_MORSECODE 100
+#define MAX_MORSECODE 300
 uint32_t button[MAX_MORSECODE];
 uint32_t buttonCount = 0;
 

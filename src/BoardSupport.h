@@ -50,5 +50,6 @@
 
 void initGPIO(GPIO_TypeDef* GPIOx, uint32_t pin, uint32_t pinPosition, uint32_t speed);
 void initEXTI(uint32_t GPIO_PortSourceGPIOx, uint32_t GPIO_PinSource, uint32_t EXTI_Line, uint32_t EXTI_Mode, uint32_t EXTI_Trigger, uint32_t EXTI_IRQn);
+void initI2C();
 
 #endif /* BOARDSUPPORT_H_ */
