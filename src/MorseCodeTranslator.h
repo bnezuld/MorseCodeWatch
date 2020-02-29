@@ -10,6 +10,10 @@
 
 #include "LinkedList.h"
 
+#define SPACE_UNITS_DOTS 1
+#define SPACE_UNITS_LETTERS 5
+#define SPACE_UNITS_SPACE 9
+
 char* TranslateCharToMorseCode(char c);
 
 char* Translate(uint32_t *morseCode, uint32_t *count);

@@ -31,6 +31,7 @@ SOFTWARE.
 #include <stddef.h>
 #include "BoardSupport.h"
 #include "LinkedList.h"
+#include "MorseCodeTranslator.h"
 /* Kernel includes. */
 #include "FreeRTOS.h"
 #include "task.h"
@@ -152,8 +153,14 @@ static void UartMessage( void *pvParameters ){
 			queued = 1;
 			size = 1;
 			place = 0;
-			xQueueSend( notificationQueue, &message, 0);
-			//queue message(will be freed here)
+			xQueueSend( notificationQueue, &message, 2);
+
+			char* test = malloc(2 * sizeof(char));
+			test[0] = 'N';
+			test[1] = '\0';
+			if(xQueueSend(sendMessageQueue, &test, 10) == pdFALSE){
+				free(test);
+			}
 		}else{
 			char *tmp = message;
 			message = malloc((size++ + 1) * sizeof(char));
@@ -182,12 +189,14 @@ static void SendMessage(void *pvParameters )
 			//check to see if there is a message to be sent
 			if(xQueuePeek( sendMessageQueue, &message, portMAX_DELAY ) == pdTRUE)
 			{
+				//try to take the semaphore if it was given when not sending a message
+				xSemaphoreTake( semaphoreStopSendMessage, 0 );
 				char* tmpMsg = message;
 				int resetTimer = 1;//only reset timer once, although there is still a possible race condition if the queue empties before it finishes processing this message
 				while(*tmpMsg != '\0')
 				{
-					//USART_SendData(USART1, *tmpMsg);
-					//while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
+					USART_SendData(USART1, *tmpMsg);
+					while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
 					//translate message
 					//queue up message for timers to use
 					char* c =  TranslateCharToMorseCode(*tmpMsg);
@@ -211,11 +220,11 @@ static void SendMessage(void *pvParameters )
 							if(*(c + 1) == '\0')
 							{
 								if(validNextChar == 1){
-									val = 2;
+									val = SPACE_UNITS_LETTERS;
 									xQueueSend( displayQueue, &val, portMAX_DELAY);//space
 								}
 								else{
-									val = 6;
+									val = SPACE_UNITS_SPACE;
 									xQueueSend( displayQueue, &val, portMAX_DELAY);//space
 								}
 							}else
@@ -273,8 +282,9 @@ static void Menu( void *pvParameters )
 		{
 			free(message);
 
-			char* test = malloc(2 * sizeof(char));
+			char* test = malloc(3 * sizeof(char));
 			test[0] = 'N';
+			test[1] = ' ';
 			test[1] = '\0';
 			//try to queue test
 			if(xQueueSend(sendMessageQueue, &test, 10) == pdTRUE)
@@ -605,7 +615,7 @@ int main(void)
 
 	/* Create the timer(s) */
 	buttonReleaseTimer = xTimerCreate( 	"buttonTimer", 				/* A text name, purely to help debugging. */
-							((SPACE_TICK_LENGTH * 10) / portTICK_PERIOD_MS ),/* The timer period, in this case (SPACE_TICK_LENGTH * 10) ms. */
+							((SPACE_TICK_LENGTH * SPACE_UNITS_SPACE + 3) / portTICK_PERIOD_MS ),/* The timer period, in this case (SPACE_TICK_LENGTH * 10) ms. */
 							pdFALSE,					/* This is a one-shot timer, so xAutoReload is set to pdFALSE. */
 							( void * ) 0,				/* The ID is not used, so can be set to anything. */
 							TranslateMorseCode			/* The callback function that switches the LED off. */

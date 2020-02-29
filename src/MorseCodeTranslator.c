@@ -54,10 +54,10 @@ char* Translate(uint32_t *morseCode, uint32_t *count)
 			position = position << 1;
 		}else{//a space
 			uint32_t i = morseCode[tmpCount]/SPACE_TICK_LENGTH;
-			if(i >= 2){//next letter(using 2 to get a better range, as 3 units represents a space/dash)
+			if(i >= SPACE_UNITS_LETTERS - 1){//next letter(using 2 to get a better range, as 3 units represents a space/dash)
 				translateChar++;
 			}
-			if (i >= 7){//next word
+			if (i >= SPACE_UNITS_SPACE - 1){//next word
 				translateChar++;
 			}
 		}
@@ -104,18 +104,11 @@ void ButtonPress(uint32_t timeDiffrence, uint8_t buttonStatus)
 			}
 		}
 	}else{// button pressed
-//		if(timeDiffrence > 500 * 10)//a temporary measure to translate the morse code need some way to send the message
-//		{
-//			TranslateSelf();
-//		}
-//		else
-//		{
-			button[buttonCount++] = timeDiffrence;
-			if(buttonCount >= MAX_MORSECODE)
-			{
-				buttonCount = 0;
-			}
-//		}
+		button[buttonCount++] = timeDiffrence;
+		if(buttonCount >= MAX_MORSECODE)
+		{
+			buttonCount = 0;
+		}
 	}
 }
 
