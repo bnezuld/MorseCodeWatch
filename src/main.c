@@ -153,7 +153,10 @@ static void UartMessage( void *pvParameters ){
 			queued = 1;
 			size = 1;
 			place = 0;
-			xQueueSend( notificationQueue, &message, 2);
+			if(xQueueSend( notificationQueue, &message, 2) == pdFALSE)
+			{
+				free(message);
+			}
 
 			char* test = malloc(2 * sizeof(char));
 			test[0] = 'N';
@@ -273,11 +276,6 @@ static void Menu( void *pvParameters )
 		if(strcmp(message, "T") == 0)
 		{
 			free(message);
-		}else if(strcmp(message, "M") == 0)
-		{
-			free(message);
-			xQueueReceive( messageQueue, &message, portMAX_DELAY );
-			free(message);
 		}else if(strcmp(message, "N") == 0)
 		{
 			free(message);
@@ -303,10 +301,6 @@ static void Menu( void *pvParameters )
 			free(message);
 			xSemaphoreGive(semaphoreStopSendMessage);
 			xQueueReset(displayQueue);
-			//xQueueReceive( displayQueue, &message, portMAX_DELAY );
-			//xQueueSend(sendMessageQueue, &message, portMAX_DELAY);
-
-			//clear display message queue
 		}else if(strcmp(message, "R") == 0)
 		{
 			free(message);
